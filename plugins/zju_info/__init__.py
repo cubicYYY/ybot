@@ -1,5 +1,5 @@
 from nonebot.rule import to_me
-from nonebot.adapters.onebot.v11 import Event, Message
+from nonebot.adapters.onebot.v11 import Event, Message, PrivateMessageEvent
 from nonebot.matcher import Matcher
 from nonebot.params import Arg, CommandArg, ArgPlainText, EventMessage
 from nonebot.plugin import on_command
@@ -13,6 +13,7 @@ PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 
 MAX_LEN = 8
 ACCOUNT_JSON_FILE = os.path.join(PLUGIN_DIR, 'accounts.json')
+print("ACCOUNT_JSON_FILE=", ACCOUNT_JSON_FILE)
 
 gpa = on_command("GPA", rule=lambda: True, aliases={"看看绩点", "gpa"})
 chalaoshi = on_command("chalaoshi", rule=lambda: True, aliases={"查老师"})
@@ -20,18 +21,20 @@ course = on_command("course", rule=lambda: True, aliases={"查课程", "课程",
 bind = on_command("bind", rule=lambda: True, aliases={"绑定"})
 
 qq_to_account = {}
-#initializing
+# initializing
 try:
     with open(ACCOUNT_JSON_FILE, "r") as f:
         qq_to_account = json.loads(f.read())
 except FileNotFoundError:
     pass
-except :
+except:
     print("WARNING: Could not recover account JSON file.")
     pass
 
-def is_private_msg(msg: Message):
-    raise NotImplementedError
+
+def is_private_msg(event: Event):
+    # message.private
+    return isinstance(event, PrivateMessageEvent)
 
 
 @gpa.handle()
@@ -133,12 +136,12 @@ async def handle_course(matcher: Matcher, course: str = ArgPlainText("query")):
 
 @bind.handle()
 async def bind_first(state: T_State, matcher: Matcher, event: Event, arg: Message = CommandArg(), msg: Message = EventMessage()):
-    print("event:", event)
-    print("arg:", arg)
-    print("msg:", msg)
-    if not is_private_msg(msg):
+    if not is_private_msg(event):
         await matcher.finish("请私聊进行绑定：你也不想大伙登进你的学在浙大吧？")
-    args = str(arg).split(" ")
+    args = str(arg).lstrip(" ").rstrip(" ").split(" ")
+
+    args = list(filter(lambda x: x != "", args))
+
     if len(args) > 2:
         await matcher.finish("非法的格式喵。最多两个参数です。")
 
@@ -149,16 +152,26 @@ async def bind_first(state: T_State, matcher: Matcher, event: Event, arg: Messag
 
 
 @bind.got("username", prompt="请输入学号的Base64编码")
-async def bind_username(event: Event, username: str = ArgPlainText("username")):
+async def bind_username(matcher: Matcher, event: Event, username: str = ArgPlainText("username")):
     qq = event.get_user_id()
     qq_to_account.setdefault(qq, {})
-    qq_to_account[qq]["username"] = base64.decodebytes(
-        bytes(username, encoding="utf-8"))
+    try:
+        qq_to_account[qq]["username"] = base64.decodebytes(
+            bytes(username, encoding="utf-8")).decode('utf-8')
+    except:
+        await matcher.finish("绑定失败。提请注意：输入的学号密码均需经过Base64编码")
 
 
 @bind.got("password", prompt="请输入密码的Base64编码")
-async def bind_password(event: Event, password: str = ArgPlainText("password")):
+async def bind_password(matcher: Matcher, event: Event, password: str = ArgPlainText("password")):
     qq = event.get_user_id()
     qq_to_account.setdefault(qq, {})
-    qq_to_account[qq]["password"] = base64.decodebytes(
-        bytes(password, encoding="utf-8"))
+    try:
+        qq_to_account[qq]["password"] = base64.decodebytes(
+            bytes(password, encoding="utf-8")).decode('utf-8')
+    except:
+        await matcher.finish("绑定失败。提请注意：输入的学号密码均需经过Base64编码")
+    # print(qq_to_account[qq])
+    with open(ACCOUNT_JSON_FILE, "w") as f:
+        f.write(json.dumps(qq_to_account))
+    await matcher.finish(f"""Done!用户名开头{qq_to_account[qq]["username"][0]}，密码开头{qq_to_account[qq]["password"][0]}""")
