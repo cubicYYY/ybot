@@ -1,5 +1,5 @@
 # A simple library for fetching data from zju school website
-# TODO: Using BeautifulSoup instead of native Regex matching
+# TODO:!! Using BeautifulSoup instead of native Regex matching
 # TODO: school official site monitoring
 # TODO: exams related stuffs
 # TODO: teacher ranking site
@@ -15,6 +15,8 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from collections import namedtuple
 from functools import wraps
+from dataclasses import dataclass
+from itertools import chain
 import aiohttp
 import execjs
 import pickle
@@ -25,10 +27,15 @@ PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.60 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "Cache-Control": "max-age=0",
+    "Upgrade-Insecure-Requests": "1",
 }
 # WEBDRIVER_PATH = "./chromedriver"
 # Deprecated, may enable it when using legacy selenium webdriver
 ECRYPTION_FILE = os.path.join(PACKAGE_DIR, 'security.js')
+CACHE_FILE = os.path.join(PACKAGE_DIR, "{username}.cache")
 
 ZJUAM_URL = "https://zjuam.zju.edu.cn"
 LOGIN_URL = ZJUAM_URL + "/cas/login?service=http://jwbinfosys.zju.edu.cn/default2.aspx"
@@ -36,11 +43,13 @@ RSA_PUBKEY_URL = ZJUAM_URL + "/cas/v2/getPubKey"
 
 JWBINFO_URL = "http://jwbinfosys.zju.edu.cn"
 GRADES_URL = JWBINFO_URL + f"/xscj.aspx"
-INIT_URL = JWBINFO_URL + f"/default2.aspx"
+EXAMS_URL = JWBINFO_URL + f"/xskscx.aspx"
+
+INIT_GRADES_URL = "http://jwbinfosys.zju.edu.cn/default2.aspx"
+INIT_EXAMS_URL = "http://jwbinfosys.zju.edu.cn/default2.aspx"
 
 CHALAOSHI_URL = "https://chalaoshi.2799web.com/"
 LOGIN_EXPIRED_KEYWORD = r"<title>Object moved</title>"
-CACHE_FILE_NAME = "{username}.cache"
 
 os.environ["EXECJS_RUNTIME"] = "Node"
 
@@ -59,37 +68,46 @@ class LoginStateExpiredException(Exception):
     pass
 
 
-class Exam(object):
-    def __init__(self, start_time, end_time, location):
-        self.start_time = start_time
-        self.end_time = end_time
-        self.location = location
+@dataclass
+class Exam:
+    code: str | None = None
+    name: str | None = None
+    term: str | None = None
+    time_final: str | None = None
+    location_final: str | None = None
+    seat_final: str | None = None
+    time_mid: str | None = None
+    location_mid: str | None = None
+    seat_mid: str | None = None
+    remark: str | None = None
+    is_retake: bool | str | None = None
+    credits: float | str | None = None
 
 
-class Course(object):
+@dataclass
+class Course:
     # WARNING: CHANGE THE ORDER OF ARGS MAY RESULT IN ERROR, SINCE UNPACKING MAY OPERATED ON TUPLE
-    def __init__(self, code=None, name=None, score=None, credit=None, grade_point=None,
-                 location=None, class_time=None, book=None, exam: Exam | None = None, aliases: list | None = None):
-        self.code = code
-        self.name = name
-        self.score = score
-        self.credit = credit
-        self.grade_point = grade_point
-        self.location = location
-        self.class_time = class_time
-        self.exam = exam
-        self.book = book
-        self.aliases = aliases
+    code: str | None = None
+    name: str | None = None
+    score: str | float | None = None
+    credit: str | float | None = None
+    grade_point: str | float | None = None
+    re_exam_score: str | float | None = None
+    location: str | None = None
+    class_time: str | None = None
+    exam: str | None = None
+    book: str | None = None
+    aliases: str | None = None
 
 
 class Fetcher(object):
-    def __init__(self, simulated=False, username=None):
+    def __init__(self, username=None, password=None, *, simulated=False):
         self.cookies = {}
         self.exams = []
         self.courses = []
         self.logged = False
         self.username = username
-        self.password = None
+        self.password = password
         self.update_gap = 5 * 60  # seconds
         self.IS_SIMULATED_LOGIN = simulated
 
@@ -202,6 +220,7 @@ class Fetcher(object):
                 return Packed(True, simplified_cookies)
 
     async def login(self, username, password):
+        self.cookies = {}
         if self.IS_SIMULATED_LOGIN == True:
             login_result = await self.simulated_login(username, password)
         else:
@@ -214,7 +233,7 @@ class Fetcher(object):
             self.logged = True
             self.username = username
             self.password = password
-            self.serialize(CACHE_FILE_NAME.format(username=self.username))
+            self.serialize(CACHE_FILE.format(username=self.username))
 
     @staticmethod
     # FIXME: The cache may be out-dated and need to be updated as some points
@@ -223,15 +242,19 @@ class Fetcher(object):
         def _impl(self, *args, **kwargs):  # TODO: type checking
             if not self.logged or self.username is None:
                 try:
-                    self.unserialize(CACHE_FILE_NAME.format(
+                    self.unserialize(CACHE_FILE.format(
                         username=self.username))
                 except FileNotFoundError:
                     pass
                 except:
-                    print("WARNING: Unable to recover cache file for login infos. Is it be modified inadvertently?")
+                    print(
+                        "WARNING: Unable to recover cache file for login infos. Is it be modified inadvertently?")
                     pass
             if not self.logged:
-                raise NotLoggedInError("You shall log-in first.")
+                if self.password is not None and self.username is not None:
+                    self.login(self.username, self.password)
+                if not self.logged:
+                    raise NotLoggedInError("You shall log-in first.")
             try:
                 res = func(self, *args, **kwargs)
                 return res
@@ -242,9 +265,117 @@ class Fetcher(object):
         return _impl
 
     @login_acquired
-    async def get_exams(self) -> list[dict]:
-        """Get student exams info(time, form, remark)"""
-        raise NotImplementedError
+    async def get_exams(self, year: str | None = None, term: str | None = None):
+        """Get student exams info(time, form, remark).\n
+        If year or term arg is left as None, it means: all!
+        """
+        # headers["Content-Type"] = "application/x-www-form-urlencoded"
+        # headers["Referer"] = EXAMS_URL + f"?xh={self.username}"
+        # headers["Connection"] = "keep-alive"
+        # headers["Origin"] = "http://jwbinfosys.zju.edu.cn"
+        headers = DEFAULT_HEADERS | {
+            "Accept": """text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9""",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Connection": "keep-alive",
+            "Proxy-Connection": "keep-alive",
+        }
+
+        async with aiohttp.ClientSession(cookies=self.cookies, headers=headers) as session:
+            async with session.get(INIT_EXAMS_URL) as r:
+                # get ASP.NET_SessionID cookie
+                res_text = await r.text()
+                for _, cookie in r.cookies.items():
+                    session.cookie_jar.update_cookies(
+                        {cookie.key: cookie.value})
+                    self.cookies[cookie.key] = cookie.value
+
+            async with session.get(EXAMS_URL + f"?xh={self.username}") as r:
+                res_text = await r.text()
+                if LOGIN_EXPIRED_KEYWORD in res_text:
+                    raise LoginStateExpiredException
+
+            # print(res_text)
+            if year is None:
+                # get all possible years
+                year_seg_pattern = r'id="xnd">(.*?)</select>'
+                print(res_text, file=open('1.tmp', "w"))
+                year_seg = re.search(
+                    year_seg_pattern, res_text, flags=re.DOTALL | re.M).group(1)
+                value_pattern = r'value="(.*?)"'
+                years = re.findall(value_pattern, year_seg,
+                                   flags=re.DOTALL | re.M)
+            else:
+                years = [year]
+
+            if term is None:
+                # get all possible terms
+                term_seg_pattern = r'id="xqd">(.*?)</select>'
+                term_seg = re.search(
+                    term_seg_pattern, res_text, flags=re.DOTALL | re.M).group(1)
+                value_pattern = r'value="(.*?)"'
+                terms = re.findall(value_pattern, term_seg,
+                                   flags=re.DOTALL | re.M)
+            else:
+                terms = [term]
+            print("y:", years, "t:", terms)
+
+            # Chaining all exams in a iterator
+            res_iter = iter(())
+            for year in years:
+                for term in terms:
+                    viewstate = re.search(
+                        r'name="__VIEWSTATE" value="(.*?)"', res_text).group(1)
+                    data = {
+                        "__EVENTTARGET": "xnd",
+                        "__EVENTARGUMENT": "",
+                        "__VIEWSTATE": viewstate,
+                        "xnd": year,
+                        "xqd": term,
+                    }
+                    encoded_data = aiohttp.FormData(data, charset="gb2312")
+                    async with session.post(EXAMS_URL + f"?xh={self.username}", data=encoded_data) as r:
+                        res_text = await r.text()
+                        # print(res_text, file=open("./tmp1.tmp", "w", encoding='utf-8'))
+                    exam_seg_pattern = r'class="datagridhead">.*?</tr>(.*?)</table></div>'
+                    exam_seg = re.search(
+                        exam_seg_pattern, res_text, flags=re.M | re.DOTALL)
+                    if exam_seg is None:
+                        continue
+                    else:
+                        exam_seg = exam_seg.group(1)
+
+                    exam_extract_pattern = r"""<td>(?P<code>.*?)</td><td>(?P<course_name>.*?)</td><td>(?P<credits>.*?)</td><td>(?P<is_retake>.*?)</td><td>(?P<student_name>.*?)</td><td>(?P<term>.*?)</td><td>(?P<time_final>.*?)</td><td>(?P<location_final>.*?)</td><td>(?P<seat_final>.*?)</td><td>(?P<time_mid>.*?)</td><td>(?P<location_mid>.*?)</td><td>(?P<seat_mid>.*?)</td><td>(?P<remark>.*?)</td>"""
+
+                    def exclude_nbsp(s: str) -> str | None:
+                        if "&nbsp;" in s:
+                            return None
+                        else:
+                            return s
+                    res_iter = chain(res_iter,
+                                     (Exam(code=exclude_nbsp(exam['code']),
+                                           name=exclude_nbsp(
+                                               exam['course_name']),
+                                           term=exclude_nbsp(exam['term']),
+                                           credits=exclude_nbsp(
+                                         exam['credits']),
+                                         is_retake=(lambda x: "&nbsp;" not in x)(
+                                         exam['is_retake']),
+                                         time_final=exclude_nbsp(
+                                         exam['time_final']),
+                                         location_final=exclude_nbsp(
+                                         exam['location_final']),
+                                         seat_final=exclude_nbsp(
+                                         exam['seat_final']),
+                                         time_mid=exclude_nbsp(
+                                         exam['time_mid']),
+                                         location_mid=exclude_nbsp(
+                                         exam['location_mid']),
+                                         seat_mid=exclude_nbsp(
+                                         exam['seat_mid']),
+                                         remark=exclude_nbsp(exam['remark']),
+                                     ) for exam in re.finditer(exam_extract_pattern, exam_seg)))
+                    # I don't know why the formatter makes it looks like s**t, but let it be
+            return res_iter
 
     @login_acquired
     async def get_timetable(self) -> list[dict]:
@@ -255,14 +386,15 @@ class Fetcher(object):
     async def get_grades(self):
         """Get student grades and scores of each course"""
         async with aiohttp.ClientSession(cookies=self.cookies, headers=DEFAULT_HEADERS) as session:
-            # @TODO sync self.cookies & parameter is duplicated. Modify it!
-            async with session.get(INIT_URL) as r:
+            # @TODO synchronization of self.cookies & parameter is overcomplex. Modify it!
+            async with session.get(INIT_GRADES_URL) as r:
                 # get ASP.NET_SessionID cookie
                 res_text = await r.text()
                 for _, cookie in r.cookies.items():
                     session.cookie_jar.update_cookies(
                         {cookie.key: cookie.value})
                     self.cookies[cookie.key] = cookie.value
+                    # print(cookie.key, cookie.value)
 
             async with session.get(GRADES_URL + f"?xh={self.username}") as r:
                 res_text = await r.text()
@@ -283,14 +415,19 @@ class Fetcher(object):
 
             async with session.post(GRADES_URL + f"?xh={self.username}", data=data) as r:
                 text = await r.text()
-                pattern = r"<td>(?P<code>.*)</td><td>(?P<name>.*)</td><td>(?P<score>.*)</td><td>(?P<credit>.*)</td><td>(?P<grade_point>.*)</td><td>&nbsp;</td>"
+                pattern = r"<td>(?P<code>.*?)</td><td>(?P<name>.*?)</td><td>(?P<score>.*?)</td><td>(?P<credit>.*?)</td><td>(?P<grade_point>.*?)</td><td>(?P<re_exam_score>.*?)</td>"
                 # self.courses = [Course(*course) for course in courses]
                 return (Course(code=course['code'],
                                name=course['name'],
                                score=course['score'],
                                credit=course['credit'],
                                grade_point=course['grade_point'],
+                               re_exam_score=course['re_exam_score']
                                ) for course in re.finditer(pattern, text))
+
+    @login_acquired
+    async def get_all_exams(self):
+        return await self.get_exams(None, None)
 
     @login_acquired
     async def get_GPA(self) -> float:
@@ -323,9 +460,9 @@ if __name__ == '__main__':
     async def main():
         username = input("username>>>")
         pwd = input("pwd>>>")
-        test = Fetcher(simulated=False, username=username)
-        await test.login(username, pwd)
-        await test.get_GPA()
+        test = Fetcher(username, pwd, simulated=False)
+        print(await test.get_GPA())
+        print(list(await test.get_exams()))
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())

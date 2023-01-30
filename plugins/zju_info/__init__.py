@@ -8,6 +8,7 @@ import base64
 import os
 import json
 import zju_fetcher as fetchers
+from zju_fetcher.school_fetcher import Exam
 
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -19,6 +20,7 @@ gpa = on_command("GPA", rule=lambda: True, aliases={"看看绩点", "gpa"})
 chalaoshi = on_command("chalaoshi", rule=lambda: True, aliases={"查老师"})
 course = on_command("course", rule=lambda: True, aliases={"查课程", "课程", "查课"})
 bind = on_command("bind", rule=lambda: True, aliases={"绑定"})
+exam = on_command("exam", rule=lambda: True, aliases={"考试"})
 
 qq_to_account = {}
 # initializing
@@ -44,8 +46,7 @@ async def handle_gpa(matcher: Matcher, event: Event):
         await matcher.finish("未绑定qq,请先*私聊*进行绑定！")
     username = qq_to_account[qq]['username']
     password = qq_to_account[qq]['password']
-    student = fetchers.zju.Fetcher()
-    await student.login(username, password)
+    student = fetchers.zju.Fetcher(username, password)
     message = f"{username}的GPA是:{await student.get_GPA():0>.3f}/5.00"
     await matcher.send(message)
 
@@ -175,3 +176,21 @@ async def bind_password(matcher: Matcher, event: Event, password: str = ArgPlain
     with open(ACCOUNT_JSON_FILE, "w") as f:
         f.write(json.dumps(qq_to_account))
     await matcher.finish(f"""Done!用户名开头{qq_to_account[qq]["username"][0]}，密码开头{qq_to_account[qq]["password"][0]}""")
+
+@exam.handle()
+async def handle_exam(matcher: Matcher, event: Event):
+    qq = event.get_user_id()
+    if qq not in qq_to_account.keys():
+        await matcher.finish("未绑定qq,请先*私聊*进行绑定！")
+    username = qq_to_account[qq]['username']
+    password = qq_to_account[qq]['password']
+    student = fetchers.zju.Fetcher(username, password)
+    msg = "考试列表："
+    for exam in await student.get_all_exams():
+        if exam.time_final is not None or exam.time_mid is not None:
+            msg += f"\n{exam.name} 期末：{exam.time_final}@【{exam.location_final}】No.{exam.seat_final}"
+            if exam.time_mid is not None:
+                msg += f"期中：{exam.time_mid}@【{exam.location_mid}】No.{exam.seat_mid}"
+        
+    await matcher.finish(msg)
+    

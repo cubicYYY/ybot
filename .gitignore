@@ -1,0 +1,17 @@
+.vscode/
+.venv/
+*.pyc
+build/
+*.egg-info
+__pycache__/
+*.cache
+*.cookie
+chromedriver
+.env*
+*.cache.json
+accounts.json
+push.bat
+pull.bat
+*.tmp
+
+!.env

@@ -1,4 +1,5 @@
 # fetcher from chalaoshi
+# TODO:!! Using BeautifulSoup instead of native Regex matching
 # TODO: student comments fetching
 import asyncio
 from functools import wraps
@@ -6,6 +7,7 @@ import json
 import aiohttp
 import re
 import random
+from dataclasses import dataclass
 CHALAOSHI_URL = "https://chalaoshi.2799web.com"
 CHALAOSHI_API_URL = "https://api.chalaoshi.2799web.com"
 HEADER_POOL = ["Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_6_8; en-us) AppleWebKit/534.50 (KHTML, like Gecko) Version/5.1 Safari/534.50",
@@ -86,31 +88,23 @@ def persist_cookie(cookie_file=None):  # TODO: make it works for both coroutine&
     return wrapper
 
 
-class InCourseTeacherStats(object):
-    def __init__(self, teacher_name=None, avg_grade_points=None, sigma=None, rating_count=None):
-        self.teacher_name = teacher_name
-        self.avg_grade_points = avg_grade_points
-        self.sigma = sigma
-        self.rating_count = rating_count
+@dataclass
+class InCourseTeacherStats:
+    teacher_name: str | None = None
+    avg_grade_points: str | float | None = None
+    sigma: str | float | None = None
+    rating_count: str | int | None = None
 
 
+@dataclass
 class Teacher(object):
-    def __init__(self, name=None, college=None, rating=None, rating_count=None,
-                 taking_rolls_likelihood=None, id=None,  grades_per_course: dict[str, InCourseTeacherStats] | None = None):
-        self.name = name
-        self.id = id
-        self.college = college
-        self.rating = rating
-        self.rating_count = rating_count
-        self.taking_rolls_likelihood = taking_rolls_likelihood
-        self.grades_per_course = grades_per_course
-
-
-class Course(object):
-    def __init__(self, name, grades_per_teacher: list[InCourseTeacherStats]):
-        self.name = name
-        self.grades_per_teacher = grades_per_teacher
-
+    name: str | None = None
+    id: str | int | None = None
+    college: str | None = None
+    rating: str | float | None = None
+    rating_count: str | int | None = None
+    taking_rolls_likelihood: str | float | None = None
+    grades_per_course: dict[str, InCourseTeacherStats] | None = None
 
 @persist_cookie("./chalaoshi.cookie")
 async def get_teacher_info(id: int, detailed=False) -> Teacher:
@@ -132,10 +126,11 @@ async def get_teacher_info(id: int, detailed=False) -> Teacher:
 </div>
 <div>"""
             match_result = re.search(pattern, txt, flags=re.DOTALL)
-            college = match_result.group(1) #FIXME: using segment name instead of int index
+            # FIXME: using segment name instead of int index
+            college = match_result.group(1)
             taking_rolls_likelihood = "N/A"
             tecaher_rating = match_result.group(2)
-            teacher_rating_count: str = match_result.group(3)
+            teacher_rating_count: str | int = match_result.group(3)
             teacher_rating_count = teacher_rating_count.rstrip("人参与评分")
             if "尚未" in teacher_rating_count:
                 teacher_rating_count = 0
@@ -210,6 +205,6 @@ async def get_course_info(name: str):
 if __name__ == '__main__':
     async def main():
         teacher = input("teacher ID >>>")
-        await get_teacher_info(int(teacher))
+        print(await get_teacher_info(int(teacher)))
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
