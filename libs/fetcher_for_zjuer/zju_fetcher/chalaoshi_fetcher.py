@@ -106,6 +106,7 @@ class Teacher(object):
     taking_rolls_likelihood: str | float | None = None
     grades_per_course: dict[str, InCourseTeacherStats] | None = None
 
+
 @persist_cookie("./chalaoshi.cookie")
 async def get_teacher_info(id: int, detailed=False) -> Teacher:
     if not isinstance(id, int):
@@ -195,12 +196,7 @@ async def get_course_info(name: str):
             pattern = r"""<td class="course_name">(?P<teacher_name>.*)</td>
 <td>(?P<avg_grade_points>.*)<span style="font-size:smaller">±(?P<sigma>.*)</span></td>
 <td>(?P<rating_count>.*)</td>"""
-            return (InCourseTeacherStats(
-                    teacher_name=teacher_grade['teacher_name'],
-                    avg_grade_points=teacher_grade['avg_grade_points'],
-                    sigma=teacher_grade['sigma'],
-                    rating_count=teacher_grade['rating_count'],
-                    ) for teacher_grade in re.finditer(pattern, txt))
+            return (InCourseTeacherStats(**teacher_grade.groupdict()) for teacher_grade in re.finditer(pattern, txt))
 
 if __name__ == '__main__':
     async def main():

@@ -239,7 +239,7 @@ class Fetcher(object):
     # FIXME: The cache may be out-dated and need to be updated as some points
     def login_acquired(func):
         @wraps(func)
-        def _impl(self, *args, **kwargs):  # TODO: type checking
+        async def wrapper(self, *args, **kwargs):  # TODO: type checking
             if not self.logged or self.username is None:
                 try:
                     self.unserialize(CACHE_FILE.format(
@@ -256,13 +256,14 @@ class Fetcher(object):
                 if not self.logged:
                     raise NotLoggedInError("You shall log-in first.")
             try:
-                res = func(self, *args, **kwargs)
+                res = await func(self, *args, **kwargs)
                 return res
             except LoginStateExpiredException:
-                self.login(self.username, self.password)
-                res = func(self, *args, **kwargs)
+                print("Try to relogin.")
+                await self.login(self.username, self.password)
+                res = await func(self, *args, **kwargs)
                 return res
-        return _impl
+        return wrapper
 
     @login_acquired
     async def get_exams(self, year: str | None = None, term: str | None = None):
@@ -344,36 +345,13 @@ class Fetcher(object):
                     else:
                         exam_seg = exam_seg.group(1)
 
-                    exam_extract_pattern = r"""<td>(?P<code>.*?)</td><td>(?P<course_name>.*?)</td><td>(?P<credits>.*?)</td><td>(?P<is_retake>.*?)</td><td>(?P<student_name>.*?)</td><td>(?P<term>.*?)</td><td>(?P<time_final>.*?)</td><td>(?P<location_final>.*?)</td><td>(?P<seat_final>.*?)</td><td>(?P<time_mid>.*?)</td><td>(?P<location_mid>.*?)</td><td>(?P<seat_mid>.*?)</td><td>(?P<remark>.*?)</td>"""
+                    exam_extract_pattern = r"""<td>(?P<code>.*?)</td><td>(?P<name>.*?)</td><td>(?P<credits>.*?)</td><td>(?P<is_retake>.*?)</td><td>(.*?)</td><td>(?P<term>.*?)</td><td>(?P<time_final>.*?)</td><td>(?P<location_final>.*?)</td><td>(?P<seat_final>.*?)</td><td>(?P<time_mid>.*?)</td><td>(?P<location_mid>.*?)</td><td>(?P<seat_mid>.*?)</td><td>(?P<remark>.*?)</td>"""
 
-                    def exclude_nbsp(s: str) -> str | None:
-                        if "&nbsp;" in s:
-                            return None
-                        else:
-                            return s
+                    def exclude_nbsp(d: dict):
+                        return {k: (None if "&nbsp;" in v else v) for k, v in d.items()}
+
                     res_iter = chain(res_iter,
-                                     (Exam(code=exclude_nbsp(exam['code']),
-                                           name=exclude_nbsp(
-                                               exam['course_name']),
-                                           term=exclude_nbsp(exam['term']),
-                                           credits=exclude_nbsp(
-                                         exam['credits']),
-                                         is_retake=(lambda x: "&nbsp;" not in x)(
-                                         exam['is_retake']),
-                                         time_final=exclude_nbsp(
-                                         exam['time_final']),
-                                         location_final=exclude_nbsp(
-                                         exam['location_final']),
-                                         seat_final=exclude_nbsp(
-                                         exam['seat_final']),
-                                         time_mid=exclude_nbsp(
-                                         exam['time_mid']),
-                                         location_mid=exclude_nbsp(
-                                         exam['location_mid']),
-                                         seat_mid=exclude_nbsp(
-                                         exam['seat_mid']),
-                                         remark=exclude_nbsp(exam['remark']),
-                                     ) for exam in re.finditer(exam_extract_pattern, exam_seg)))
+                                     (Exam(**exclude_nbsp(exam.groupdict())) for exam in re.finditer(exam_extract_pattern, exam_seg)))
                     # I don't know why the formatter makes it looks like s**t, but let it be
             return res_iter
 
@@ -417,13 +395,7 @@ class Fetcher(object):
                 text = await r.text()
                 pattern = r"<td>(?P<code>.*?)</td><td>(?P<name>.*?)</td><td>(?P<score>.*?)</td><td>(?P<credit>.*?)</td><td>(?P<grade_point>.*?)</td><td>(?P<re_exam_score>.*?)</td>"
                 # self.courses = [Course(*course) for course in courses]
-                return (Course(code=course['code'],
-                               name=course['name'],
-                               score=course['score'],
-                               credit=course['credit'],
-                               grade_point=course['grade_point'],
-                               re_exam_score=course['re_exam_score']
-                               ) for course in re.finditer(pattern, text))
+                return (Course(**course.groupdict()) for course in re.finditer(pattern, text))
 
     @login_acquired
     async def get_all_exams(self):
