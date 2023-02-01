@@ -208,8 +208,10 @@ async def handle_exam(matcher: Matcher, event: Event, arg: Message = CommandArg(
             return name
 
     # TODO: Move this logic to Exam using @property/getter+setter
-    def is_future(time_str: str) -> bool:
+    def is_future(time_str: str | None) -> bool:
         # format: YYYY年mm月dd日(HH:mm-HH:mm)
+        if time_str is None:
+            return False
         time_fmt = r"(?P<year>[0-9]{4})年(?P<month>[0-9]{1,2})月(?P<day>[0-9]{1,2})日\((?P<start_h>[0-9]{1,2}):(?P<start_m>[0-9]{1,2})-(?P<end_h>[0-9]{1,2}):(?P<end_m>[0-9]{1,2})\)"
         t = re.match(time_fmt, time_str).groupdict()
         for k, v in t.items():
@@ -222,7 +224,7 @@ async def handle_exam(matcher: Matcher, event: Event, arg: Message = CommandArg(
 
     for id, exam in enumerate(await student.get_all_exams()):
         if exam.time_final is not None or exam.time_mid is not None:
-            if is_only_incoming and (not is_future(exam.time_final) and not is_future(exam.time_final)):
+            if is_only_incoming and (not is_future(exam.time_mid) and not is_future(exam.time_final)):
                 continue
             assert exam.name is not None
             msg += f"\n{simplified_name(exam.name):－<{MAX_NAME_LEN}}－－\
@@ -232,8 +234,8 @@ async def handle_exam(matcher: Matcher, event: Event, arg: Message = CommandArg(
             if exam.time_mid is not None:
                 msg += f"{show_if_exist(exam.time_mid, '   期中：{}')}\
 {show_if_exist(exam.location_mid,'@【{}】')}\
-{show_if_exist(exam.seat_mid, 'No.{}')}\
-{show_if_exist(exam.remark, '⚠{}')}"
+{show_if_exist(exam.seat_mid, 'No.{}')}"
+            msg += f"{show_if_exist(exam.remark, '⚠{}')}"
         if id == MAX_EXAM_LEN:
             break
 

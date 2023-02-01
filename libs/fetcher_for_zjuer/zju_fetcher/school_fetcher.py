@@ -289,7 +289,7 @@ class Fetcher(object):
         }
 
         def exclude_nbsp(d: dict):
-            return {k: (None if "&nbsp;" in v else v) for k, v in d.items()}
+            return {k: (None if v == "&nbsp;" else v.replace("&nbsp;"," ")) for k, v in d.items()}
 
         async with aiohttp.ClientSession(cookies=self.cookies, headers=headers) as session:
             async with session.get(INIT_EXAMS_URL) as r:
