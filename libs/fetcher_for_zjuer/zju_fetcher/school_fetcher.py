@@ -23,6 +23,7 @@ import pickle
 import json
 import os
 import re
+from typing import Optional, Iterator
 PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 DEFAULT_HEADERS = {
@@ -70,34 +71,34 @@ class LoginStateExpiredException(Exception):
 
 @dataclass
 class Exam:
-    code: str | None = None
-    name: str | None = None
-    term: str | None = None
-    time_final: str | None = None
-    location_final: str | None = None
-    seat_final: str | None = None
-    time_mid: str | None = None
-    location_mid: str | None = None
-    seat_mid: str | None = None
-    remark: str | None = None
-    is_retake: bool | str | None = None
-    credits: float | str | None = None
+    code: Optional[str] = None
+    name: Optional[str] = None
+    term: Optional[str] = None
+    time_final: Optional[str] = None
+    location_final: Optional[str] = None
+    seat_final: Optional[str] = None
+    time_mid: Optional[str] = None
+    location_mid: Optional[str] = None
+    seat_mid: Optional[str] = None
+    remark: Optional[str] = None
+    is_retake: Optional[bool | str] = None
+    credits: Optional[float | str] = None
 
 
 @dataclass
 class Course:
     # WARNING: CHANGE THE ORDER OF ARGS MAY RESULT IN ERROR, SINCE UNPACKING MAY OPERATED ON TUPLE
-    code: str | None = None
-    name: str | None = None
-    score: str | float | None = None
-    credit: str | float | None = None
-    grade_point: str | float | None = None
-    re_exam_score: str | float | None = None
-    location: str | None = None
-    class_time: str | None = None
-    exam: str | None = None
-    book: str | None = None
-    aliases: str | None = None
+    code: Optional[str] = None
+    name: Optional[str] = None
+    score: Optional[str | float] = None
+    credit: Optional[str | float] = None
+    grade_point: Optional[str | float] = None
+    re_exam_score: Optional[str | float] = None
+    location: Optional[str] = None
+    class_time: Optional[str] = None
+    exam: Optional[str] = None
+    book: Optional[str] = None
+    aliases: Optional[str] = None
 
 
 class Fetcher(object):
@@ -121,13 +122,13 @@ class Fetcher(object):
                 return False
         return True
 
-    def serialize(self, file: str):
+    def serialize(self, file: str) -> None:
         if file is None:
             raise ValueError("No file specified")
         with open(file, 'wb') as f:
             pickle.dump(self.__dict__, file=f)
 
-    def unserialize(self, file: str):
+    def unserialize(self, file: str) -> None:
         if file is None:
             raise ValueError("No file specified")
         with open(file, 'rb') as f:
@@ -239,7 +240,7 @@ class Fetcher(object):
     # FIXME: The cache may be out-dated and need to be updated as some points
     def login_acquired(func):
         @wraps(func)
-        async def wrapper(self, *args, **kwargs):  # TODO: type checking
+        async def wrapper(self : 'Fetcher', *args, **kwargs):  # TODO: type checking
             if not self.logged or self.username is None:
                 try:
                     self.unserialize(CACHE_FILE.format(
@@ -252,7 +253,7 @@ class Fetcher(object):
                     pass
             if not self.logged:
                 if self.password is not None and self.username is not None:
-                    self.login(self.username, self.password)
+                    await self.login(self.username, self.password)
                 if not self.logged:
                     raise NotLoggedInError("You shall log-in first.")
             try:
@@ -266,7 +267,7 @@ class Fetcher(object):
         return wrapper
 
     @login_acquired
-    async def get_exams(self, year: str | None = None, term: str | None = None):
+    async def get_exams(self, year: Optional[str] = None, term: Optional[str] = None) -> Iterator[Exam]:
         """Get student exams info(time, form, remark).\n
         If year or term arg is left as None, it means: all!
         """
@@ -361,7 +362,7 @@ class Fetcher(object):
         raise NotImplementedError
 
     @login_acquired
-    async def get_grades(self):
+    async def get_grades(self) -> Iterator[Course]:
         """Get student grades and scores of each course"""
         async with aiohttp.ClientSession(cookies=self.cookies, headers=DEFAULT_HEADERS) as session:
             # @TODO synchronization of self.cookies & parameter is overcomplex. Modify it!
@@ -398,7 +399,7 @@ class Fetcher(object):
                 return (Course(**course.groupdict()) for course in re.finditer(pattern, text))
 
     @login_acquired
-    async def get_all_exams(self):
+    async def get_all_exams(self) -> Iterator[Exam]:
         return await self.get_exams(None, None)
 
     @login_acquired

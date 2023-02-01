@@ -8,11 +8,15 @@ import base64
 import os
 import json
 import zju_fetcher as fetchers
+from math import ceil
 from zju_fetcher.school_fetcher import Exam
 
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 
 MAX_LEN = 8
+MAX_EXAM_LEN = -1
+MAX_NAME_LEN = 8
+
 ACCOUNT_JSON_FILE = os.path.join(PLUGIN_DIR, 'accounts.json')
 print("ACCOUNT_JSON_FILE=", ACCOUNT_JSON_FILE)
 
@@ -177,6 +181,7 @@ async def bind_password(matcher: Matcher, event: Event, password: str = ArgPlain
         f.write(json.dumps(qq_to_account))
     await matcher.finish(f"""Done!用户名开头{qq_to_account[qq]["username"][0]}，密码开头{qq_to_account[qq]["password"][0]}""")
 
+
 @exam.handle()
 async def handle_exam(matcher: Matcher, event: Event):
     qq = event.get_user_id()
@@ -186,11 +191,28 @@ async def handle_exam(matcher: Matcher, event: Event):
     password = qq_to_account[qq]['password']
     student = fetchers.zju.Fetcher(username, password)
     msg = "考试列表："
-    for exam in await student.get_all_exams():
+
+    def show_if_exist(obj, template: str = "{}") -> str:
+        return template.format(obj) if obj is not None else ""
+
+    def simplified_name(name: str) -> str:
+        # TODO: Some conventional name can be directly mapped
+        if len(name) > MAX_NAME_LEN:
+            return name[::ceil(len(name) / MAX_NAME_LEN)]
+        else:
+            return name
+
+    for id, exam in enumerate(await student.get_all_exams()):
         if exam.time_final is not None or exam.time_mid is not None:
-            msg += f"\n{exam.name} 期末：{exam.time_final}@【{exam.location_final}】No.{exam.seat_final}"
+            msg += f"\n{simplified_name(exam.name):－<{MAX_NAME_LEN}}－－\
+{show_if_exist(exam.time_final, '期末：{}')}\
+{show_if_exist(exam.location_final,'@【{}】')}\
+{show_if_exist(exam.seat_final, 'No.{}')}"
             if exam.time_mid is not None:
-                msg += f"期中：{exam.time_mid}@【{exam.location_mid}】No.{exam.seat_mid}"
-        
+                msg += f"{show_if_exist(exam.time_mid, '   期中：{}')}\
+{show_if_exist(exam.location_mid,'@【{}】')}\
+{show_if_exist(exam.seat_mid, 'No.{}')}"
+        if id == MAX_EXAM_LEN:
+            break
+
     await matcher.finish(msg)
-    

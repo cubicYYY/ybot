@@ -8,6 +8,7 @@ import aiohttp
 import re
 import random
 from dataclasses import dataclass
+from typing import Optional
 CHALAOSHI_URL = "https://chalaoshi.2799web.com"
 CHALAOSHI_API_URL = "https://api.chalaoshi.2799web.com"
 HEADER_POOL = ["Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_6_8; en-us) AppleWebKit/534.50 (KHTML, like Gecko) Version/5.1 Safari/534.50",
@@ -90,21 +91,21 @@ def persist_cookie(cookie_file=None):  # TODO: make it works for both coroutine&
 
 @dataclass
 class InCourseTeacherStats:
-    teacher_name: str | None = None
-    avg_grade_points: str | float | None = None
-    sigma: str | float | None = None
-    rating_count: str | int | None = None
+    teacher_name: Optional[str] = None
+    avg_grade_points: Optional[str | float] = None
+    sigma: Optional[str | float] = None
+    rating_count: Optional[str | int] = None
 
 
 @dataclass
 class Teacher(object):
-    name: str | None = None
-    id: str | int | None = None
-    college: str | None = None
-    rating: str | float | None = None
-    rating_count: str | int | None = None
-    taking_rolls_likelihood: str | float | None = None
-    grades_per_course: dict[str, InCourseTeacherStats] | None = None
+    name: Optional[str] = None
+    id: Optional[str | int] = None
+    college: Optional[str] = None
+    rating: Optional[str | float] = None
+    rating_count: Optional[str | int] = None
+    taking_rolls_likelihood: Optional[str | float] = None
+    grades_per_course: Optional[dict[str, InCourseTeacherStats]] = None
 
 
 @persist_cookie("./chalaoshi.cookie")

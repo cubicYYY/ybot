@@ -384,7 +384,7 @@ LIST = {
 }
 hnktb = on_command("花语", aliases = {"hanakotoba", "花言叶", "花言葉"})
 
-def day_hash(day: datetime.date = None) -> int:
+def day_hash(day: datetime.date | None = None) -> int:
     if day is None:
         day = datetime.date.today()
     hash = day.strftime('%y%m%d')
