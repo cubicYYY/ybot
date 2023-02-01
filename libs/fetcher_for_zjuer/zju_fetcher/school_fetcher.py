@@ -195,7 +195,7 @@ class Fetcher(object):
             async with session.get(LOGIN_URL) as r:  # get the 'execution' segment
                 res_text = await r.text(encoding='utf-8')
                 execution = re.search(
-                    r'name="execution" value="(.*?)"', res_text).group(1)
+                    r'name="execution" value="(.*?)"', res_text).group(1)  # type: ignore
                 for _, cookie in r.cookies.items():
                     session.cookie_jar.update_cookies(
                         {cookie.key: cookie.value})
@@ -210,7 +210,8 @@ class Fetcher(object):
                 for _, cookie in r.cookies.items():
                     session.cookie_jar.update_cookies(
                         {cookie.key: cookie.value})
-            cookies = session.cookie_jar.filter_cookies(ZJUAM_URL)
+            cookies = session.cookie_jar.filter_cookies(
+                ZJUAM_URL)  # type: ignore
             if "iPlanetDirectoryPro" not in str(cookies):
                 # Got invalid cookie
                 return Packed(False, f"Wrong password/username! Status Code:{r.status}\
@@ -240,11 +241,14 @@ class Fetcher(object):
     # FIXME: The cache may be out-dated and need to be updated as some points
     def login_acquired(func):
         @wraps(func)
-        async def wrapper(self : 'Fetcher', *args, **kwargs):  # TODO: type checking
+        async def wrapper(self: 'Fetcher', *args, **kwargs):  # TODO: Reconstruction needed
             if not self.logged or self.username is None:
                 try:
+                    pwd_provided = self.password
                     self.unserialize(CACHE_FILE.format(
                         username=self.username))
+                    if pwd_provided is not None and pwd_provided != "":
+                        self.password = pwd_provided
                 except FileNotFoundError:
                     pass
                 except:
@@ -271,16 +275,21 @@ class Fetcher(object):
         """Get student exams info(time, form, remark).\n
         If year or term arg is left as None, it means: all!
         """
-        # headers["Content-Type"] = "application/x-www-form-urlencoded"
-        # headers["Referer"] = EXAMS_URL + f"?xh={self.username}"
-        # headers["Connection"] = "keep-alive"
-        # headers["Origin"] = "http://jwbinfosys.zju.edu.cn"
+        EXAM_SEG_PATTERN = r'class="datagridhead">.*?</tr>(.*?)</table></div>'
+        YEAR_SEG_PATTERN = r'id="xnd">(.*?)</select>'
+        TERM_SEG_PATTERN = r'id="xqd">(.*?)</select>'
+        VALUE_PATTERN = r'value="(.*?)"'
+        EXAM_EXTRACT_PATTERN = r"""<td>(?P<code>.*?)</td><td>(?P<name>.*?)</td><td>(?P<credits>.*?)</td><td>(?P<is_retake>.*?)</td><td>(.*?)</td><td>(?P<term>.*?)</td><td>(?P<time_final>.*?)</td><td>(?P<location_final>.*?)</td><td>(?P<seat_final>.*?)</td><td>(?P<time_mid>.*?)</td><td>(?P<location_mid>.*?)</td><td>(?P<seat_mid>.*?)</td><td>(?P<remark>.*?)</td>"""
+
         headers = DEFAULT_HEADERS | {
             "Accept": """text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9""",
             "Content-Type": "application/x-www-form-urlencoded",
             "Connection": "keep-alive",
             "Proxy-Connection": "keep-alive",
         }
+
+        def exclude_nbsp(d: dict):
+            return {k: (None if "&nbsp;" in v else v) for k, v in d.items()}
 
         async with aiohttp.ClientSession(cookies=self.cookies, headers=headers) as session:
             async with session.get(INIT_EXAMS_URL) as r:
@@ -296,37 +305,41 @@ class Fetcher(object):
                 if LOGIN_EXPIRED_KEYWORD in res_text:
                     raise LoginStateExpiredException
 
-            # print(res_text)
+            # IMPORTANT: THE DATA IN THE INITIAL VIEW MUST BE CAPTURED
+
             if year is None:
                 # get all possible years
-                year_seg_pattern = r'id="xnd">(.*?)</select>'
-                print(res_text, file=open('1.tmp', "w"))
                 year_seg = re.search(
-                    year_seg_pattern, res_text, flags=re.DOTALL | re.M).group(1)
-                value_pattern = r'value="(.*?)"'
-                years = re.findall(value_pattern, year_seg,
+                    YEAR_SEG_PATTERN, res_text, flags=re.DOTALL | re.M).group(1)  # type: ignore
+                years = re.findall(VALUE_PATTERN, year_seg,
                                    flags=re.DOTALL | re.M)
             else:
                 years = [year]
 
             if term is None:
                 # get all possible terms
-                term_seg_pattern = r'id="xqd">(.*?)</select>'
                 term_seg = re.search(
-                    term_seg_pattern, res_text, flags=re.DOTALL | re.M).group(1)
-                value_pattern = r'value="(.*?)"'
-                terms = re.findall(value_pattern, term_seg,
+                    TERM_SEG_PATTERN, res_text, flags=re.DOTALL | re.M).group(1)  # type: ignore
+                terms = re.findall(VALUE_PATTERN, term_seg,
                                    flags=re.DOTALL | re.M)
             else:
                 terms = [term]
-            print("y:", years, "t:", terms)
 
             # Chaining all exams in a iterator
-            res_iter = iter(())
+            def extract_exams(text: str) -> Iterator[Exam]:
+                exam_seg = re.search(
+                    EXAM_SEG_PATTERN, text, flags=re.M | re.DOTALL)
+                if exam_seg is None:
+                    return iter(())
+                else:
+                    exam_seg = exam_seg.group(1)  # type: ignore
+                return (Exam(**exclude_nbsp(exam.groupdict())) for exam in re.finditer(EXAM_EXTRACT_PATTERN, exam_seg))
+
+            res_iter = extract_exams(res_text)
             for year in years:
                 for term in terms:
                     viewstate = re.search(
-                        r'name="__VIEWSTATE" value="(.*?)"', res_text).group(1)
+                        r'name="__VIEWSTATE" value="(.*?)"', res_text).group(1)  # type: ignore
                     data = {
                         "__EVENTTARGET": "xnd",
                         "__EVENTARGUMENT": "",
@@ -337,23 +350,10 @@ class Fetcher(object):
                     encoded_data = aiohttp.FormData(data, charset="gb2312")
                     async with session.post(EXAMS_URL + f"?xh={self.username}", data=encoded_data) as r:
                         res_text = await r.text()
-                        # print(res_text, file=open("./tmp1.tmp", "w", encoding='utf-8'))
-                    exam_seg_pattern = r'class="datagridhead">.*?</tr>(.*?)</table></div>'
-                    exam_seg = re.search(
-                        exam_seg_pattern, res_text, flags=re.M | re.DOTALL)
-                    if exam_seg is None:
-                        continue
-                    else:
-                        exam_seg = exam_seg.group(1)
 
-                    exam_extract_pattern = r"""<td>(?P<code>.*?)</td><td>(?P<name>.*?)</td><td>(?P<credits>.*?)</td><td>(?P<is_retake>.*?)</td><td>(.*?)</td><td>(?P<term>.*?)</td><td>(?P<time_final>.*?)</td><td>(?P<location_final>.*?)</td><td>(?P<seat_final>.*?)</td><td>(?P<time_mid>.*?)</td><td>(?P<location_mid>.*?)</td><td>(?P<seat_mid>.*?)</td><td>(?P<remark>.*?)</td>"""
-
-                    def exclude_nbsp(d: dict):
-                        return {k: (None if "&nbsp;" in v else v) for k, v in d.items()}
-
-                    res_iter = chain(res_iter,
-                                     (Exam(**exclude_nbsp(exam.groupdict())) for exam in re.finditer(exam_extract_pattern, exam_seg)))
-                    # I don't know why the formatter makes it looks like s**t, but let it be
+                    res_iter = chain(res_iter, extract_exams(res_text))
+                    # I don't know why the formatter makes it looks like s**t, but let it be.
+                    # TODO: using priority queue and sort by time
             return res_iter
 
     @login_acquired
@@ -380,9 +380,9 @@ class Fetcher(object):
                 if LOGIN_EXPIRED_KEYWORD in res_text:
                     raise LoginStateExpiredException
             viewstate = re.search(
-                r'name="__VIEWSTATE" value="(.*?)"', res_text).group(1)
+                r'name="__VIEWSTATE" value="(.*?)"', res_text).group(1)  # type: ignore
             button2 = re.search(
-                r'name="Button2" value="(.*?)"', res_text).group(1)
+                r'name="Button2" value="(.*?)"', res_text).group(1)  # type: ignore
             data = {
                 "__VIEWSTATE": viewstate,
                 "ddlXN": "",
@@ -395,7 +395,6 @@ class Fetcher(object):
             async with session.post(GRADES_URL + f"?xh={self.username}", data=data) as r:
                 text = await r.text()
                 pattern = r"<td>(?P<code>.*?)</td><td>(?P<name>.*?)</td><td>(?P<score>.*?)</td><td>(?P<credit>.*?)</td><td>(?P<grade_point>.*?)</td><td>(?P<re_exam_score>.*?)</td>"
-                # self.courses = [Course(*course) for course in courses]
                 return (Course(**course.groupdict()) for course in re.finditer(pattern, text))
 
     @login_acquired
@@ -408,6 +407,7 @@ class Fetcher(object):
         grade_points_sum_weighted = 0.0
         for course in await self.get_grades():
             if self.__class__.is_float(course.score, course.credit, course.grade_point):
+                assert course.credit and course.grade_point
                 credits_sum += float(course.credit)
                 grade_points_sum_weighted += float(course.credit) * \
                     float(course.grade_point)

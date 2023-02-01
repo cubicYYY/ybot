@@ -6,7 +6,10 @@ from nonebot.plugin import on_command
 from nonebot.typing import T_State
 import base64
 import os
+import re
 import json
+import pytz
+from datetime import datetime, timezone
 import zju_fetcher as fetchers
 from math import ceil
 from zju_fetcher.school_fetcher import Exam
@@ -24,7 +27,7 @@ gpa = on_command("GPA", rule=lambda: True, aliases={"看看绩点", "gpa"})
 chalaoshi = on_command("chalaoshi", rule=lambda: True, aliases={"查老师"})
 course = on_command("course", rule=lambda: True, aliases={"查课程", "课程", "查课"})
 bind = on_command("bind", rule=lambda: True, aliases={"绑定"})
-exam = on_command("exam", rule=lambda: True, aliases={"考试"})
+exam = on_command("exam", rule=lambda: True, aliases={"查考试", "考试"})
 
 qq_to_account = {}
 # initializing
@@ -98,7 +101,8 @@ async def handle_chalaoshi(state: T_State, matcher: Matcher, teacher: str = ArgP
                 await matcher.reject(choice_msg)  # Ask for a choice
     except IndexError:
         await matcher.reject("请好好选一个，谢谢配合")
-    the_teacher = await fetchers.chalaoshi.get_teacher_info(teacher_id)
+    assert teacher_id is not None
+    the_teacher = await fetchers.chalaoshi.get_teacher_info(int(teacher_id))
     message = f"""{the_teacher.name}老师 @{the_teacher.college}
 学生评价：{the_teacher.rating} ({the_teacher.rating_count:.0f}人评价)
 点名可能性：{the_teacher.taking_rolls_likelihood}%
@@ -122,7 +126,6 @@ async def handle_course(matcher: Matcher, course: str = ArgPlainText("query")):
     res = await fetchers.chalaoshi.get_course_info(course)
     if isinstance(res, int):
         await matcher.finish(f"发生错误。HTTP状态码:{res}")
-        return
     teachers_of_course = list(res)
     msg = ""
     if len(teachers_of_course) == 0:
@@ -140,7 +143,7 @@ async def handle_course(matcher: Matcher, course: str = ArgPlainText("query")):
 
 
 @bind.handle()
-async def bind_first(state: T_State, matcher: Matcher, event: Event, arg: Message = CommandArg(), msg: Message = EventMessage()):
+async def bind_first(state: T_State, matcher: Matcher, event: Event, arg: Message = CommandArg()):
     if not is_private_msg(event):
         await matcher.finish("请私聊进行绑定：你也不想大伙登进你的学在浙大吧？")
     args = str(arg).lstrip(" ").rstrip(" ").split(" ")
@@ -183,7 +186,9 @@ async def bind_password(matcher: Matcher, event: Event, password: str = ArgPlain
 
 
 @exam.handle()
-async def handle_exam(matcher: Matcher, event: Event):
+async def handle_exam(matcher: Matcher, event: Event, arg: Message = CommandArg()):
+    print(arg)
+    is_only_incoming = "all" not in arg.extract_plain_text()
     qq = event.get_user_id()
     if qq not in qq_to_account.keys():
         await matcher.finish("未绑定qq,请先*私聊*进行绑定！")
@@ -202,8 +207,24 @@ async def handle_exam(matcher: Matcher, event: Event):
         else:
             return name
 
+    # TODO: Move this logic to Exam using @property/getter+setter
+    def is_future(time_str: str) -> bool:
+        # format: YYYY年mm月dd日(HH:mm-HH:mm)
+        time_fmt = r"(?P<year>[0-9]{4})年(?P<month>[0-9]{1,2})月(?P<day>[0-9]{1,2})日\((?P<start_h>[0-9]{1,2}):(?P<start_m>[0-9]{1,2})-(?P<end_h>[0-9]{1,2}):(?P<end_m>[0-9]{1,2})\)"
+        t = re.match(time_fmt, time_str).groupdict()
+        for k, v in t.items():
+            t[k] = int(v)
+        assert isinstance(t, dict)
+        now = datetime.now(tz=pytz.timezone('Asia/Shanghai'))  # UTC+8
+        start_time = datetime(year=t["year"], month=t["month"], day=t["day"],
+                              hour=t["start_h"], minute=t["start_m"], second=0, tzinfo=pytz.timezone('Asia/Shanghai'))
+        return (start_time - now).days >= 0
+
     for id, exam in enumerate(await student.get_all_exams()):
         if exam.time_final is not None or exam.time_mid is not None:
+            if is_only_incoming and (not is_future(exam.time_final) and not is_future(exam.time_final)):
+                continue
+            assert exam.name is not None
             msg += f"\n{simplified_name(exam.name):－<{MAX_NAME_LEN}}－－\
 {show_if_exist(exam.time_final, '期末：{}')}\
 {show_if_exist(exam.location_final,'@【{}】')}\
@@ -211,7 +232,8 @@ async def handle_exam(matcher: Matcher, event: Event):
             if exam.time_mid is not None:
                 msg += f"{show_if_exist(exam.time_mid, '   期中：{}')}\
 {show_if_exist(exam.location_mid,'@【{}】')}\
-{show_if_exist(exam.seat_mid, 'No.{}')}"
+{show_if_exist(exam.seat_mid, 'No.{}')}\
+{show_if_exist(exam.remark, '⚠{}')}"
         if id == MAX_EXAM_LEN:
             break
 

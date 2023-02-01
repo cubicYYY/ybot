@@ -7,7 +7,7 @@ import json
 import aiohttp
 import re
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 CHALAOSHI_URL = "https://chalaoshi.2799web.com"
 CHALAOSHI_API_URL = "https://api.chalaoshi.2799web.com"
@@ -105,7 +105,8 @@ class Teacher(object):
     rating: Optional[str | float] = None
     rating_count: Optional[str | int] = None
     taking_rolls_likelihood: Optional[str | float] = None
-    grades_per_course: Optional[dict[str, InCourseTeacherStats]] = None
+    grades_per_course: dict[str, InCourseTeacherStats] = field(
+        default_factory=lambda: {})
 
 
 @persist_cookie("./chalaoshi.cookie")
@@ -116,7 +117,7 @@ async def get_teacher_info(id: int, detailed=False) -> Teacher:
     async with aiohttp.ClientSession(headers=global_headers, cookies=global_cookies) as session:
         async with session.get(url) as r:
             txt = await r.text()
-            # print(txt)
+            # FIXME: Use groupdict() and unpacking instead of group()
             teacher_name = re.search(
                 r"<h3>(?P<teacher>.*?)</h3>", txt).group(1)
             pattern = r"""<p id="cmcinfo">浙江大学</p>

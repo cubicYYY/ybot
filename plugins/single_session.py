@@ -2,7 +2,8 @@ from typing import Dict, AsyncGenerator
 
 from nonebot.adapters import Event
 from nonebot.params import Depends
-from nonebot.message import IgnoredException, event_preprocessor
+from nonebot.message import event_preprocessor
+from nonebot.exception import IgnoredException
 
 _running_matcher: Dict[str, int] = {}
 
