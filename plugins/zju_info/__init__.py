@@ -1,5 +1,5 @@
 from nonebot.rule import to_me
-from nonebot.adapters.onebot.v11 import Event, Message, PrivateMessageEvent
+from nonebot.adapters.onebot.v11 import Event, Message, PrivateMessageEvent, MessageSegment
 from nonebot.matcher import Matcher
 from nonebot.params import Arg, CommandArg, ArgPlainText, EventMessage
 from nonebot.plugin import on_command
@@ -9,10 +9,13 @@ import os
 import re
 import json
 import pytz
-from datetime import datetime, timezone
+import string
+import random
+from datetime import datetime, timezone, timedelta
 import zju_fetcher as fetchers
 from math import ceil
 from zju_fetcher.school_fetcher import Exam
+from utils import qq_image
 
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -22,6 +25,7 @@ MAX_NAME_LEN = 8
 
 ACCOUNT_JSON_FILE = os.path.join(PLUGIN_DIR, 'accounts.json')
 print("ACCOUNT_JSON_FILE=", ACCOUNT_JSON_FILE)
+IMAGE_TMP_PATH = "/tmp"
 
 gpa = on_command("GPA", rule=lambda: True, aliases={"看看绩点", "gpa"})
 chalaoshi = on_command("chalaoshi", rule=lambda: True, aliases={"查老师"})
@@ -45,6 +49,10 @@ def is_private_msg(event: Event):
     # message.private
     return isinstance(event, PrivateMessageEvent)
 
+def random_str(length):
+    """Generate random a string consists with a-zA-z0-9 with a given length"""
+    letters = string.ascii_lowercase + string.ascii_uppercase + string.digits
+    return ''.join(random.choice(letters) for _ in range(length))
 
 @gpa.handle()
 async def handle_gpa(matcher: Matcher, event: Event):
@@ -187,15 +195,14 @@ async def bind_password(matcher: Matcher, event: Event, password: str = ArgPlain
 
 @exam.handle()
 async def handle_exam(matcher: Matcher, event: Event, arg: Message = CommandArg()):
-    print(arg)
     is_only_incoming = "all" not in arg.extract_plain_text()
+    is_graph = "text" not in arg.extract_plain_text()
     qq = event.get_user_id()
     if qq not in qq_to_account.keys():
         await matcher.finish("未绑定qq,请先*私聊*进行绑定！")
     username = qq_to_account[qq]['username']
     password = qq_to_account[qq]['password']
     student = fetchers.zju.Fetcher(username, password)
-    msg = "考试列表："
 
     def show_if_exist(obj, template: str = "{}") -> str:
         return template.format(obj) if obj is not None else ""
@@ -207,33 +214,63 @@ async def handle_exam(matcher: Matcher, event: Event, arg: Message = CommandArg(
         else:
             return name
 
-    # TODO: Move this logic to Exam using @property/getter+setter
-    def is_future(time_str: str | None) -> bool:
-        # format: YYYY年mm月dd日(HH:mm-HH:mm)
-        if time_str is None:
-            return False
-        time_fmt = r"(?P<year>[0-9]{4})年(?P<month>[0-9]{1,2})月(?P<day>[0-9]{1,2})日\((?P<start_h>[0-9]{1,2}):(?P<start_m>[0-9]{1,2})-(?P<end_h>[0-9]{1,2}):(?P<end_m>[0-9]{1,2})\)"
-        t = re.match(time_fmt, time_str).groupdict()
-        for k, v in t.items():
-            t[k] = int(v)
-        assert isinstance(t, dict)
-        now = datetime.now(tz=pytz.timezone('Asia/Shanghai'))  # UTC+8
-        start_time = datetime(year=t["year"], month=t["month"], day=t["day"],
-                              hour=t["start_h"], minute=t["start_m"], second=0, tzinfo=pytz.timezone('Asia/Shanghai'))
-        return (start_time - now).days >= 0
+    datetime_now = datetime.now(tz=pytz.timezone('Asia/Shanghai'))
 
+    def is_future(datetime_exam: datetime | bool) -> bool:
+        if isinstance(datetime_exam, bool):
+            return False
+        return datetime_exam >= datetime_now
+
+    def get_time_left(exam: Exam): # TODO: round towards zero instead of min() for finished exams
+        nearest = None
+        if is_future(exam.datetime_mid):
+            nearest = exam.datetime_mid
+        if is_future(exam.datetime_final):
+            nearest = exam.datetime_final if not nearest else min(
+                exam.datetime_final, nearest)
+        if not nearest:
+            return None
+        assert isinstance(nearest, datetime)
+        return nearest - datetime_now
+    
+    def get_days_left(exam:Exam):
+        res = get_time_left(exam)
+        return res.days if res is not None else None
+    
+    def is_incoming(exam: Exam):
+        return is_future(exam.datetime_mid) or is_future(exam.datetime_final)
+    
+    def comp_key(x: Exam):
+        time_left = get_time_left(x)
+        return time_left if time_left else timedelta(0)
+    
+    if is_graph:  # TODO: query less(only year-1~year+1)       
+        arg_dicts = [{
+            'exam': exam,
+            'days_left': get_days_left(exam)
+        } for exam in await student.get_all_exams() if (not is_only_incoming) or is_incoming(exam)]
+        
+        image = qq_image.get_exam_image(sorted(arg_dicts, key=lambda x: comp_key(x['exam']), reverse=False))
+        image_path = f"{IMAGE_TMP_PATH}/tmp_{random_str(6)}.png"
+        image.save(image_path) #TODO: using a context manager to delete tmp file
+        await matcher.send(MessageSegment.image("file://" + image_path))
+        os.remove(image_path)
+        return
+        
+    msg = "考试列表："
     for id, exam in enumerate(await student.get_all_exams()):
         if exam.time_final is not None or exam.time_mid is not None:
-            if is_only_incoming and (not is_future(exam.time_mid) and not is_future(exam.time_final)):
+            if is_only_incoming and not is_incoming(exam):
                 continue
             assert exam.name is not None
-            msg += f"\n{simplified_name(exam.name):－<{MAX_NAME_LEN}}－－\
-{show_if_exist(exam.time_final, '期末：{}')}\
-{show_if_exist(exam.location_final,'@【{}】')}\
-{show_if_exist(exam.seat_final, 'No.{}')}"
-            if exam.time_mid is not None:
-                msg += f"{show_if_exist(exam.time_mid, '   期中：{}')}\
-{show_if_exist(exam.location_mid,'@【{}】')}\
+            msg += f"\n{simplified_name(exam.name):－<{MAX_NAME_LEN}}－－"
+            if exam.time_final is not None and is_future(exam.datetime_final):
+                msg += f"{show_if_exist(exam.time_final, '【期末】{}')}\
+    {show_if_exist(exam.location_final,'@[{}]')}\
+    {show_if_exist(exam.seat_final, '-No.{}')}"
+            if exam.time_mid is not None and is_future(exam.datetime_mid):
+                msg += f"{show_if_exist(exam.time_mid, '   【期中】{}')}\
+{show_if_exist(exam.location_mid,'@[{}]')}\
 {show_if_exist(exam.seat_mid, 'No.{}')}"
             msg += f"{show_if_exist(exam.remark, '⚠{}')}"
         if id == MAX_EXAM_LEN:

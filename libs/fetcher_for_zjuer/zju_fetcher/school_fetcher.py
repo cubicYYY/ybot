@@ -1,12 +1,11 @@
 # A simple library for fetching data from zju school website
 # TODO:!! Using BeautifulSoup instead of native Regex matching
 # TODO: school official site monitoring
-# TODO: exams related stuffs
-# TODO: teacher ranking site
 # TODO: deadlines query
 # TODO: school activities announcement/subscription
 # Non-firstplace requirements
 # TODO: McDonald tracking
+# TODO: use copyreg instead of native pickle
 import asyncio
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -17,6 +16,8 @@ from collections import namedtuple
 from functools import wraps
 from dataclasses import dataclass
 from itertools import chain
+import pytz
+from datetime import datetime, timezone
 import aiohttp
 import execjs
 import pickle
@@ -84,7 +85,40 @@ class Exam:
     is_retake: Optional[bool | str] = None
     credits: Optional[float | str] = None
 
-
+    _datetime_mid : Optional[datetime | bool] = None # False means no exam
+    _datetime_final : Optional[datetime | bool] = None # False means no exam
+    
+    @property
+    def datetime_mid(self):
+        if self._datetime_mid is not None:
+            return self._datetime_mid
+        self._datetime_mid = self.site_str2datetime(self.time_mid)
+        return self._datetime_mid
+        
+    @property
+    def datetime_final(self):
+        if self._datetime_final is not None:
+            return self._datetime_final
+        self._datetime_final = self.site_str2datetime(self.time_final)
+        return self._datetime_final
+        
+    @staticmethod
+    def site_str2datetime(time_str):
+        # format: YYYY年mm月dd日(HH:mm-HH:mm)
+        if time_str is None:
+            return False
+        time_fmt = r"(?P<year>[0-9]{4})年(?P<month>[0-9]{1,2})月(?P<day>[0-9]{1,2})日\((?P<start_h>[0-9]{1,2}):(?P<start_m>[0-9]{1,2})-(?P<end_h>[0-9]{1,2}):(?P<end_m>[0-9]{1,2})\)"
+        t = re.match(time_fmt, time_str)
+        if t is None:
+            return False
+        t = t.groupdict()
+        for k, v in t.items():
+            t[k] = int(v)
+        assert isinstance(t, dict)
+        return datetime(year=t["year"], month=t["month"], day=t["day"],
+                              hour=t["start_h"], minute=t["start_m"], second=0, tzinfo=pytz.timezone('Asia/Shanghai'))
+        
+    
 @dataclass
 class Course:
     # WARNING: CHANGE THE ORDER OF ARGS MAY RESULT IN ERROR, SINCE UNPACKING MAY OPERATED ON TUPLE
@@ -434,8 +468,10 @@ if __name__ == '__main__':
         username = input("username>>>")
         pwd = input("pwd>>>")
         test = Fetcher(username, pwd, simulated=False)
-        print(await test.get_GPA())
-        print(list(await test.get_exams()))
+        # print(await test.get_GPA())
+        exams = list(await test.get_exams())
+        print(exams)
+        print(exams[0].datetime_final)
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
