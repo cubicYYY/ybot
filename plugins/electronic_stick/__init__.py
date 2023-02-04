@@ -8,12 +8,13 @@ from nonebot.params import EventPlainText, CommandArg, ArgPlainText
 from nonebot.matcher import Matcher
 from nonebot.adapters.onebot.v11 import Event, Message, MessageSegment
 from nonebot.plugin import on_command
+from nonebot.typing import T_State
 import pypinyin
 from pydub import AudioSegment
 import os
 import random
 import string
-import base64
+import re
 
 from .config import Config
 
@@ -23,8 +24,8 @@ config = Config.parse_obj(global_config)
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 
 WORD_WAV_PATH = os.path.join(PLUGIN_DIR, "sources")
-PHRASE_WAV_PATH = os.path.join(PLUGIN_DIR, "ysddSources")
-TRANSFORM_MAP = {
+PHRASE_WAV_PATH = os.path.join(PLUGIN_DIR, "special_sources")
+_TRANSFORM_MAP = {
     "a": "诶",
     "b": "比",
     "c": "西",
@@ -34,14 +35,14 @@ TRANSFORM_MAP = {
     "g": "鸡",
     "h": "爱吃",
     "i": "爱",
-    "j": "贼",  # TODO: zhei.wav not zei.wav
+    "j": "$zhei$",
     "k": "可",
     "l": "爱录",
     "m": "爱目",
     "n": "恩",
     "o": "偶",
     "p": "皮",
-    "q": "揪",  # TODO: kiu.wav not jiu.wav
+    "q": "$kiu$",
     "r": "啊",
     "s": "爱死",
     "t": "题",
@@ -61,8 +62,46 @@ TRANSFORM_MAP = {
     "7": "七",
     "8": "八",
     "9": "九",
+    "米浴说的道理": "$miyu$",
+    "啊米浴说的道理": "$miyu$",
+    "大家好啊": "$djha$",
+    "我是说的道理": "$wssddl$",
+    "今天来点大家想看的东西": "$jtlaidian$",
+    "今天来点儿大家想看的东西": "$jtlaidian$",
+    "说的道理": "$sddl$",
+    "波比是我爹": "$bobi$",
+    "啊嘛波比是我爹": "$bobi$",
+    "哇袄": "$waao$",
+    "【欧西给】": "$oxga$", # TODO: avoid collision with number/alpha escaping
+    "【欧西给一】": "$oxga$",
+    "【欧西给一】": "$oxgb$",
+    "【欧西给二】": "$oxgc$",
+    "【欧西给三】": "$oxgd$",
+    "AQ": "$AQ$",
+    "AQ1": "$AQa$",
+    "AQ2": "$AQb$",
+    "再Q": "$zaiQ$",
+    "走位": "$zouwei$",
+    "诶乌兹": "$euz$",
+    "欧内的手": "$onds$",
+    "好汉": "$haohan$",
+    "我是电棍": "$wsdg$",
+    "【啊】": "$aa$",
+    "【啊一】": "$aa$",
+    "【啊二】": "$ab$",
+    "韭菜盒子": "$jiucaihezi$",
+    "癌症晚期": "$azwq$",
+    "【鬼叫】": "$guijiaoa$",
+    "【鬼叫一】": "$guijiaob$", #哇袄！！
+    "【鬼叫二】": "$guijiaob$", #哇袄！！
+    "【鬼叫三】": "$guijiaoc$", #哇袄！！#哇袄！！
+    "【鬼叫四】": "$guijiaod$", #wu---ao
+    "【鬼叫五】": "$guijiaoe$", #wu---ao
+    "【鬼叫六】": "$guijiaof$", #wua
 }
-
+TRANSFORM_MAP_LIST = sorted(_TRANSFORM_MAP.items(), key=lambda item: len(item[0]))
+TRANSFORM_MAP = {ele[0] : ele[1]  for ele in TRANSFORM_MAP_LIST}
+# print(TRANSFORM_MAP)
 
 def random_str(length):
     """Generate random a string consists with a-zA-z0-9 with a given length"""
@@ -74,24 +113,37 @@ diangun = on_command("大家好啊", rule=lambda: True, aliases={"diangun", "活
 
 
 @diangun.handle()
-async def handle_diangun(matcher: Matcher, arg: Message = CommandArg()):
+async def handle_diangun(state: T_State, matcher: Matcher, arg: Message = CommandArg()):
+    state["start_init"] = False
     if arg.extract_plain_text().strip(" ") != "":
+        state["start_init"] = True
         matcher.set_arg("word", Message(arg))
 
 
 @diangun.got("word", prompt="你要鬼叫什么？")
-async def gen_diangun(matcher: Matcher, word: str = ArgPlainText("word")):
+async def gen_diangun(state: T_State, matcher: Matcher, word: str = ArgPlainText("word")):
     word = word.lower()
     for k, v in TRANSFORM_MAP.items():
         word = word.replace(k, v)
     pinyins = pypinyin.lazy_pinyin(word)
-    sound_data = AudioSegment.from_wav(f"{PHRASE_WAV_PATH}/djha.wav")
-    for pinyin in filter(lambda x: x.islower() and x.isalpha(), pinyins):
+    sound_data = AudioSegment.from_wav(
+        f"{PHRASE_WAV_PATH}/djha.wav") if state["start_init"] else AudioSegment.empty()
+    # print(word, pinyins)
+    for pinyin in pinyins:
+        pattern = r"\$(.*?)\$"
+        matches = re.findall(pattern, pinyin)
         try:
-            sound_data += AudioSegment.from_wav(
-                f"{WORD_WAV_PATH}/{pinyin}.wav")
-        except:
-            pass
+            # print(matches)
+            if matches:
+                for special in matches:
+                    sound_data += AudioSegment.from_wav(
+                        f"{PHRASE_WAV_PATH}/{special}.wav")
+            elif pinyin.islower() and pinyin.isalpha():
+                sound_data += AudioSegment.from_wav(
+                    f"{WORD_WAV_PATH}/{pinyin}.wav")
+        except Exception as e:
+            print(e)
+            continue
     tmp_file_path = f"/tmp/tmp_{random_str(6)}.wav"
     sound_data.export(tmp_file_path, format="wav")
     with open(tmp_file_path, "rb") as f:
