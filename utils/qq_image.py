@@ -1,4 +1,4 @@
-from functools import wraps
+from functools import lru_cache, wraps
 from typing import Iterator
 from PIL import Image, ImageDraw, ImageFont
 from zju_fetcher.chalaoshi_fetcher import Teacher
@@ -53,22 +53,22 @@ def registered_as(name):
     return wrapper
 
 
-def draw_rounded_rectangle(image, pos: tuple[Pos, Pos] | tuple[float, float, float, float], fill=TRANSPARENT, r=0, border=False, border_color=TRANSPARENT, border_width=1):
+def draw_rounded_rectangle(image, pos: tuple[Pos, Pos] | tuple[float, float, float, float], fill=TRANSPARENT, r: int | float = 0, border=False, border_color=TRANSPARENT, border_width=1):
     if isinstance(image, ImageDraw.ImageDraw):
         draw = image
     else:
         draw = ImageDraw.Draw(image)
-        
+
     if isinstance(pos[0], (float, int)):
         x1, y1, x2, y2 = pos
     else:
         x1, y1, x2, y2 = pos[0].x, pos[0].y, pos[1].x, pos[1].y
 
-    assert isinstance(x1, (int,float))
-    assert isinstance(y1, (int,float))
-    assert isinstance(x2, (int,float))
-    assert isinstance(y2, (int,float))
-    
+    assert isinstance(x1, (int, float))
+    assert isinstance(y1, (int, float))
+    assert isinstance(x2, (int, float))
+    assert isinstance(y2, (int, float))
+
     draw.ellipse((x1, y1, x1+2*r, y1+2*r), fill=fill)
     draw.ellipse((x2-2*r, y1, x2, y1+2*r), fill=fill)
     draw.ellipse((x1, y2-2*r, x1+2*r, y2), fill=fill)
@@ -90,14 +90,19 @@ def draw_rounded_rectangle(image, pos: tuple[Pos, Pos] | tuple[float, float, flo
         draw.line((x1+r, y2, x2-r, y2), border_color, border_width)
 
 
+@lru_cache
+def sized_font(font=ZPIX, fontsize=24):
+    return ImageFont.truetype(font, fontsize)
+
+
 def text_with_pos_updated(draw: ImageDraw.ImageDraw, pos: Pos, text, font=ZPIX, fontsize=12, color=(0, 0, 0)):
-    txtlen = draw.textlength(text, font=ImageFont.truetype(font, fontsize))
+    txtlen = draw.textlength(text, font=sized_font(font, fontsize))
     draw.text(astuple(pos), text, color,
-              font=ImageFont.truetype(font, fontsize))
+              font=sized_font(font, fontsize))
     pos.x += txtlen
 
 
-def get_exam_card(exam: Exam, days_left='几', bg_color=WHITE, width=2000,height=400):
+def get_exam_card(exam: Exam, days_left='几', bg_color=WHITE, width=2000, height=400):
     image = Image.new('RGBA', (width, height), TRANSPARENT)
     d = ImageDraw.Draw(image)
     draw_rounded_rectangle(d, (0, 0, width, height), bg_color, 20, False)
@@ -155,10 +160,11 @@ def get_exam_image(arg_dicts: list[dict]):
     draw = ImageDraw.Draw(background)
     pos = Pos(0, 0)
     draw.text(astuple(pos), "試験、襲来", WHITE,
-              font=ImageFont.truetype(MATISSE_EB, 126))
+              font=sized_font(MATISSE_EB, 126))
     pos = Pos(50, 126)
     for id, exam in enumerate(arg_dicts):
-        card = get_exam_card(**exam, bg_color=SHALLOW_PURPLE if id&1 else RICE_WHITE, width=CARD_WIDTH, height=CARD_HEIGHT)
+        card = get_exam_card(**exam, bg_color=SHALLOW_PURPLE if id &
+                             1 else RICE_WHITE, width=CARD_WIDTH, height=CARD_HEIGHT)
         background.paste(card, astuple(pos), card)  # with transparency
         pos.y += CARD_HEIGHT + CARD_GAP
     return background
@@ -168,6 +174,6 @@ if __name__ == '__main__':
     image = Image.new('RGBA', (1920, 1080), (192, 192, 192, 255))
     exam = Exam(code='(2922-2923-1)-114514', name='大学物理（戊）Ⅱ', term='冬', time_final='2923年13月33日(88:00-0:88)', location_final=None,
                 seat_final=None, time_mid='2922年13月36日(25:00-28:00)', location_mid='白银港西2B-114(录播.6)', seat_mid='19', remark='推迟进行的线下期末考试', is_retake=None, credits='3.0')
-    exams = [{'exam':exam,'days_left':114} for _ in range(6)]
+    exams = [{'exam': exam, 'days_left': 114} for _ in range(6)]
     image = get_exam_image(exams)
     image.save('./tmp.png')

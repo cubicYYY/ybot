@@ -154,7 +154,7 @@ async def handle_course(matcher: Matcher, course: str = ArgPlainText("query")):
 async def bind_first(state: T_State, matcher: Matcher, event: Event, arg: Message = CommandArg()):
     if not is_private_msg(event):
         await matcher.finish("请私聊进行绑定：你也不想大伙登进你的学在浙大吧？")
-    args = str(arg).lstrip(" ").rstrip(" ").split(" ")
+    args = str(arg).strip(" ").split(" ")
 
     args = list(filter(lambda x: x != "", args))
 
@@ -244,6 +244,7 @@ async def handle_exam(matcher: Matcher, event: Event, arg: Message = CommandArg(
         time_left = get_time_left(x)
         return time_left if time_left else timedelta(0)
     
+    # default: send as a graph
     if is_graph:  # TODO: query less(only year-1~year+1)       
         arg_dicts = [{
             'exam': exam,

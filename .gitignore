@@ -13,4 +13,5 @@ accounts.json
 push.bat
 pull.bat
 *.tmp
+tmp*
 !.env

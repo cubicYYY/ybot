@@ -16,6 +16,7 @@ echo = on_command(START_KEY_WORD)
 async def handle_echo(message: str = EventPlainText()):
     plain_text = message.lstrip(START_KEY_WORD)
     plain_text = plain_text.replace('是不是','就是')
+    plain_text = plain_text.replace('_TMP_ME_CONSTANT_','')
     plain_text = plain_text.replace('我','_TMP_ME_CONSTANT_')
     plain_text = plain_text.replace('你','我')
     plain_text = plain_text.replace('_TMP_ME_CONSTANT_','你')
