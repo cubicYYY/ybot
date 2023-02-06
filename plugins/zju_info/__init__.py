@@ -205,7 +205,7 @@ async def handle_exam(matcher: Matcher, event: Event, arg: Message = CommandArg(
     student = fetchers.zju.Fetcher(username, password)
 
     def show_if_exist(obj, template: str = "{}") -> str:
-        return template.format(obj) if obj is not None else ""
+        return template.format(obj) if obj else ""
 
     def simplified_name(name: str) -> str:
         # TODO: Some conventional name can be directly mapped
@@ -251,7 +251,7 @@ async def handle_exam(matcher: Matcher, event: Event, arg: Message = CommandArg(
             'days_left': get_days_left(exam)
         } for exam in await student.get_all_exams() if (not is_only_incoming) or is_incoming(exam)]
         
-        image = qq_image.get_exam_image(sorted(arg_dicts, key=lambda x: comp_key(x['exam']), reverse=False))
+        image = qq_image.handlers['exam'](sorted(arg_dicts, key=lambda x: comp_key(x['exam']), reverse=False))
         image_path = f"{IMAGE_TMP_PATH}/tmp_{random_str(6)}.png"
         image.save(image_path) #TODO: using a context manager to delete tmp file
         await matcher.send(MessageSegment.image("file://" + image_path))

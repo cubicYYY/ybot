@@ -52,7 +52,7 @@ INIT_EXAMS_URL = "http://jwbinfosys.zju.edu.cn/default2.aspx"
 
 CHALAOSHI_URL = "https://chalaoshi.2799web.com/"
 LOGIN_EXPIRED_KEYWORD = r"<title>Object moved</title>"
-
+TIMEOUT = aiohttp.ClientTimeout(total=15,sock_connect=10,sock_read=10)
 os.environ["EXECJS_RUNTIME"] = "Node"
 
 Packed = namedtuple('Packed', ['ok', 'data'])
@@ -210,7 +210,7 @@ class Fetcher(object):
         # @TODO injection prevention
         assert isinstance(password, str)
 
-        async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(), headers=DEFAULT_HEADERS) as session:
+        async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(), headers=DEFAULT_HEADERS, timeout=TIMEOUT) as session:
             # _pv0 cookie need to be carried to get a right key pair
             async with session.get(RSA_PUBKEY_URL) as r:
                 res_text = await r.text(encoding='utf-8')
@@ -287,7 +287,7 @@ class Fetcher(object):
                     pass
                 except:
                     print(
-                        "WARNING: Unable to recover cache file for login infos. Is it be modified inadvertently?")
+                        "WARNING: Unable to recover the cache file for login infos. Has it been modified inadvertently?")
                     pass
             if not self.logged:
                 if self.password is not None and self.username is not None:
@@ -325,7 +325,7 @@ class Fetcher(object):
         def exclude_nbsp(d: dict):
             return {k: (None if v == "&nbsp;" else v.replace("&nbsp;"," ")) for k, v in d.items()}
 
-        async with aiohttp.ClientSession(cookies=self.cookies, headers=headers) as session:
+        async with aiohttp.ClientSession(cookies=self.cookies, headers=headers, timeout=TIMEOUT) as session:
             async with session.get(INIT_EXAMS_URL) as r:
                 # get ASP.NET_SessionID cookie
                 res_text = await r.text()
@@ -398,7 +398,7 @@ class Fetcher(object):
     @login_acquired
     async def get_grades(self) -> Iterator[Course]:
         """Get student grades and scores of each course"""
-        async with aiohttp.ClientSession(cookies=self.cookies, headers=DEFAULT_HEADERS) as session:
+        async with aiohttp.ClientSession(cookies=self.cookies, headers=DEFAULT_HEADERS, timeout=TIMEOUT) as session:
             # @TODO synchronization of self.cookies & parameter is overcomplex. Modify it!
             async with session.get(INIT_GRADES_URL) as r:
                 # get ASP.NET_SessionID cookie

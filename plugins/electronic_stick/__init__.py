@@ -25,7 +25,7 @@ PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 
 WORD_WAV_PATH = os.path.join(PLUGIN_DIR, "sources")
 PHRASE_WAV_PATH = os.path.join(PLUGIN_DIR, "special_sources")
-_TRANSFORM_MAP = {
+_TRANSFORM_MAP = { #FIXME: alpha replacement intercept special phrases
     "a": "诶",
     "b": "比",
     "c": "西",
@@ -72,15 +72,15 @@ _TRANSFORM_MAP = {
     "波比是我爹": "$bobi$",
     "啊嘛波比是我爹": "$bobi$",
     "哇袄": "$waao$",
-    "【欧西给】": "$oxga$", # TODO: avoid collision with number/alpha escaping
+    "【欧西给】": "$oxga$",  # TODO: avoid collision with number/alpha escaping
     "【欧西给一】": "$oxga$",
     "【欧西给一】": "$oxgb$",
     "【欧西给二】": "$oxgc$",
     "【欧西给三】": "$oxgd$",
-    "AQ": "$AQ$",
-    "AQ1": "$AQa$",
-    "AQ2": "$AQb$",
-    "再Q": "$zaiQ$",
+    "aq": "$AQ$",
+    "aq1": "$AQa$",
+    "aq2": "$AQb$",
+    "再q": "$zaiQ$",
     "走位": "$zouwei$",
     "诶乌兹": "$euz$",
     "欧内的手": "$onds$",
@@ -92,16 +92,25 @@ _TRANSFORM_MAP = {
     "韭菜盒子": "$jiucaihezi$",
     "癌症晚期": "$azwq$",
     "【鬼叫】": "$guijiaoa$",
-    "【鬼叫一】": "$guijiaob$", #哇袄！！
-    "【鬼叫二】": "$guijiaob$", #哇袄！！
-    "【鬼叫三】": "$guijiaoc$", #哇袄！！#哇袄！！
-    "【鬼叫四】": "$guijiaod$", #wu---ao
-    "【鬼叫五】": "$guijiaoe$", #wu---ao
-    "【鬼叫六】": "$guijiaof$", #wua
+    "【鬼叫一】": "$guijiaob$",  # 哇袄！！
+    "【鬼叫二】": "$guijiaob$",  # 哇袄！！
+    "【鬼叫三】": "$guijiaoc$",  # 哇袄！！#哇袄！！
+    "【鬼叫四】": "$guijiaod$",  # wu---ao
+    "【鬼叫五】": "$guijiaoe$",  # wu---ao
+    "【鬼叫六】": "$guijiaof$",  # wua
+    " ": "$$",
+    "\n": "$$",
+    "，": "$$",
+    ",": "$$",
+    ".": "$$",
+    "。": "$$",
+
 }
-TRANSFORM_MAP_LIST = sorted(_TRANSFORM_MAP.items(), key=lambda item: len(item[0]))
-TRANSFORM_MAP = {ele[0] : ele[1]  for ele in TRANSFORM_MAP_LIST}
+TRANSFORM_MAP_LIST = sorted(_TRANSFORM_MAP.items(), key=lambda item: len(
+    item[0]) if not item[1].startswith('$') else 10000000)
+TRANSFORM_MAP = {ele[0]: ele[1] for ele in TRANSFORM_MAP_LIST}
 # print(TRANSFORM_MAP)
+
 
 def random_str(length):
     """Generate random a string consists with a-zA-z0-9 with a given length"""
@@ -137,13 +146,16 @@ async def gen_diangun(state: T_State, matcher: Matcher, word: str = ArgPlainText
             if matches:
                 for special in matches:
                     sound_data += AudioSegment.from_wav(
-                        f"{PHRASE_WAV_PATH}/{special}.wav")
+                        f"{PHRASE_WAV_PATH}/{special}.wav") if special else AudioSegment.silent(duration=200)
             elif pinyin.islower() and pinyin.isalpha():
                 sound_data += AudioSegment.from_wav(
                     f"{WORD_WAV_PATH}/{pinyin}.wav")
         except Exception as e:
             print(e)
             continue
+    sound_data += AudioSegment.silent(duration=200)
+    if len(sound_data) < 1000:
+        sound_data += AudioSegment.silent(duration=1000)
     tmp_file_path = f"/tmp/tmp_{random_str(6)}.wav"
     sound_data.export(tmp_file_path, format="wav")
     with open(tmp_file_path, "rb") as f:
