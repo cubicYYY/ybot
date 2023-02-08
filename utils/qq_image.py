@@ -135,7 +135,7 @@ def text_with_pos_updated(draw: ImageDraw.ImageDraw, pos: Pos, text="", font=ZPI
         draw_pos.x -= txtlen
     draw.text(astuple(draw_pos), text, color,
               font=sized_font(font, fontsize), language=language)
-    pos.x += txtlen if is_right2left else -txtlen
+    pos.x += txtlen if not is_right2left else -txtlen
 
 
 def multiline_text_with_pos_updated(draw: ImageDraw.ImageDraw, pos: Pos, text="", font=ZPIX,
@@ -306,15 +306,15 @@ def _get_hanakotoba_image(image: str, kotobas: list[str], name="", desc=""):
 
 
 if __name__ == '__main__':
-    # image = Image.new('RGBA', (1920, 1080), BLACK)
-    # exam = Exam(code='(2922-2923-1)-114514', name='大学物理（戊）Ⅱ', term='冬', time_final='2923年13月33日(88:00-0:88)', location_final=None,
-    #             seat_final=None, time_mid='2922年13月36日(25:00-28:00)', location_mid='白银港西2B-114(录播.6)', seat_mid='19', remark='推迟进行的线下期末考试', is_retake=None, credits='3.0')
-    # exams = [{'exam': exam, 'days_left': 114} for _ in range(6)]
-    # image = _get_exam_image(exams)
-    image = _get_hanakotoba_image("/root/ybot/plugins/hanakotoba/images/hana_16.jpg", ['努力', '未来', 'A Beautiful Star'], "アイウエオ",
-                                  """誕生日1/21の花
-別名：ヘデラ、セイヨウキヅタ
-科名：ウコギ科
-  花言葉は、アイビーが他の樹木、岩、石垣などにしっかりつかまって成長することから。 とても丈夫な植物で、日向でも日陰でも育つ。日本の環境では適さない条件はほぼ無い程に育てることは容易。
-  ◎広がりすぎないように管理することが育てる上で重要なポイントです。アイビーの品種はなんと１０００種以上もあります。""")
+    image = Image.new('RGBA', (1920, 1080), BLACK)
+    exam = Exam(code='(2922-2923-1)-114514', name='大学物理（戊）Ⅱ', term='冬', time_final='2923年13月33日(88:00-0:88)', location_final=None,
+                seat_final=None, time_mid='2922年13月36日(25:00-28:00)', location_mid='白银港西2B-114(录播.6)', seat_mid='19', remark='推迟进行的线下期末考试', is_retake=None, credits='3.0')
+    exams = [{'exam': exam, 'days_left': 114} for _ in range(6)]
+    image = _get_exam_image(exams)
+#     image = _get_hanakotoba_image("/root/ybot/plugins/hanakotoba/images/hana_16.jpg", ['努力', '未来', 'A Beautiful Star'], "アイウエオ",
+#                                   """誕生日1/21の花
+# 別名：ヘデラ、セイヨウキヅタ
+# 科名：ウコギ科
+#   花言葉は、アイビーが他の樹木、岩、石垣などにしっかりつかまって成長することから。 とても丈夫な植物で、日向でも日陰でも育つ。日本の環境では適さない条件はほぼ無い程に育てることは容易。
+#   ◎広がりすぎないように管理することが育てる上で重要なポイントです。アイビーの品種はなんと１０００種以上もあります。""")
     image.save('./tmp.png')
