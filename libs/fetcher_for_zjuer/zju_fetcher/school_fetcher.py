@@ -1,6 +1,5 @@
 # A simple library for fetching data from zju school website
-# TODO:!! Using BeautifulSoup instead of native Regex matching
-# TODO:! Better caching: using __version to ensure the cache is valid
+#! TODO: Using BeautifulSoup instead of native Regex matching
 # TODO: school official site monitoring
 # TODO: deadlines query
 # TODO: school activities announcement/subscription
@@ -26,7 +25,7 @@ import pickle
 import json
 import os
 import re
-from typing import Optional, Iterator, Callable
+from typing import Iterable, Optional, Iterator, Callable, Tuple
 PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 DEFAULT_HEADERS = {
@@ -74,10 +73,13 @@ class LoginStateExpiredException(Exception):
 
 
 class TimedDataDescriptor(object):
-    """Descriptor for date with last update time"""
+    """Descriptor for date with last update time
+    set: just set the data
+    get: tuple (last update timestamp, data)
+    """
 
     def __set_name__(self, owner, name):
-        self.name = name
+        self.name = '_' + name
         self.last_update_name = '_time_' + name
 
     def __init__(self, data=None, data_factory: Optional[Callable] = None) -> None:
@@ -89,7 +91,7 @@ class TimedDataDescriptor(object):
         else:
             self.initial_data = None
 
-    def __get__(self, obj, objtype):
+    def __get__(self, obj, objtype): # can this be simplified? feels trivial when using it
         if obj is None:
             return self
         return (obj.__dict__.setdefault(self.last_update_name, None), obj.__dict__.setdefault(self.name, self.initial_data))
@@ -168,7 +170,7 @@ class Course:
 class Fetcher(object):
     exams = TimedDataDescriptor(data_factory=lambda: [])
     courses = TimedDataDescriptor(data_factory=lambda: [])
-
+    
     def __init__(self, username=None, password=None, *, simulated=False):
         self.cookies = {}
         self.logged = False
@@ -176,6 +178,7 @@ class Fetcher(object):
         self.password = password
         self.ttl = 5 * 60  # seconds
         self.IS_SIMULATED_LOGIN = simulated
+        self.__version = "1.0.0"
 
     @staticmethod
     def is_float(*args) -> bool:
@@ -199,6 +202,9 @@ class Fetcher(object):
         with open(file, 'rb') as f:
             try:
                 saved = pickle.load(file=f)
+                if saved["__version"] != self.__version:
+                    print("WARN: older version cache file")
+                    return
             except:
                 print("WARN: failed to recover account cache file.")
                 return
@@ -354,7 +360,7 @@ class Fetcher(object):
     # Exam ops
 
     @login_acquired
-    async def get_exams(self, year: Optional[str] = None, term: Optional[str] = None) -> Iterator[Exam]:
+    async def get_exams(self, year: Optional[str] = None, term: Optional[str] = None) -> Iterable[Exam]:
         """Get student exams info(time, form, remark).\n
         If year or term arg is left as None, it means: all!
         """
@@ -437,21 +443,21 @@ class Fetcher(object):
                     res_iter = chain(res_iter, extract_exams(res_text))
                     # I don't know why the formatter makes it looks like s**t, but let it be.
                     # TODO: using priority queue and sort by time
-            self.exams = list(res_iter)
-            _, res = self.exams
+            res = list(res_iter)
+            self.exams = res
             return iter(res)
 
     @cache_after_exec
     @login_acquired
     # TODO: Fine-grained caching for exams (year/term)
-    async def get_all_exams(self) -> Iterator[Exam]:
+    async def get_all_exams(self) -> Tuple[float, Iterable[Exam]]:
         up_time, cached_exams = self.exams
-        if not up_time or datetime.timestamp(datetime.now()) - up_time > self.ttl:
-            self.exams = list(await self.get_exams(None, None))
-            _, res = iter(self.exams)
-            return res
-        else:
-            return iter(cached_exams)
+        if up_time and datetime.timestamp(datetime.now()) - up_time < self.ttl:
+            return up_time, iter(cached_exams)
+        res = list(await self.get_exams(None, None))
+        self.exams = res
+        return self.exams
+            
     ###
 
     @cache_after_exec
@@ -462,13 +468,12 @@ class Fetcher(object):
 
     @cache_after_exec
     @login_acquired
-    async def get_grades(self) -> Iterator[Course]:
+    async def get_grades(self) -> Iterable[Course]:
         """Get student grades and scores of each course"""
         up_time, cached_courses = self.courses
         if up_time and datetime.timestamp(datetime.now()) - up_time < self.ttl:
             # FIXME: using a decorator to declare a specific cache key; return expired cache as a fallback when update failed
-            _, res = self.courses
-            return iter(res)
+            return iter(cached_courses)
         async with aiohttp.ClientSession(cookies=self.cookies, headers=DEFAULT_HEADERS, timeout=TIMEOUT) as session:
             # @TODO synchronization of self.cookies & parameter is overcomplex. Modify it!
             async with session.get(INIT_GRADES_URL) as r:
@@ -500,9 +505,9 @@ class Fetcher(object):
             async with session.post(GRADES_URL + f"?xh={self.username}", data=data) as r:
                 text = await r.text()
                 pattern = r"<td>(?P<code>.*?)</td><td>(?P<name>.*?)</td><td>(?P<score>.*?)</td><td>(?P<credit>.*?)</td><td>(?P<grade_point>.*?)</td><td>(?P<re_exam_score>.*?)</td>"
-            self.courses = [Course(**course.groupdict())
+            res = [Course(**course.groupdict())
                             for course in re.finditer(pattern, text)]
-            _, res = self.courses
+            self.courses = res
             return iter(res)
 
     @login_acquired
@@ -539,10 +544,9 @@ if __name__ == '__main__':
         pwd = input("pwd>>>")
         test = Fetcher(username, pwd, simulated=False)
         print(await test.get_GPA())
+        exams = list(await test.get_all_exams())
+        print(exams)
         print(test.__dict__)
-
-        # exams = list(await test.get_exams())
-        # print(exams)
         # print(exams[0].datetime_final)
 
     loop = asyncio.get_event_loop()

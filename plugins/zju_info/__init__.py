@@ -245,13 +245,14 @@ async def handle_exam(matcher: Matcher, event: Event, arg: Message = CommandArg(
         return time_left if time_left else timedelta(0)
     
     # default: send as a graph
-    if is_graph:  # TODO: query less(only year-1~year+1)       
+    if is_graph:  # TODO: query less(only year-1~year+1)   
+        up_time, iter = await student.get_all_exams()    
         arg_dicts = [{
             'exam': exam,
             'days_left': get_days_left(exam)
-        } for exam in await student.get_all_exams() if (not is_only_incoming) or is_incoming(exam)]
+        } for exam in iter if (not is_only_incoming) or is_incoming(exam)]
         
-        image = qq_image.handlers['exam'](sorted(arg_dicts, key=lambda x: comp_key(x['exam']), reverse=False))
+        image = qq_image.handlers['exam'](sorted(arg_dicts, key=lambda x: comp_key(x['exam']), reverse=False), last_update = up_time)
         image_path = f"{IMAGE_TMP_PATH}/tmp_{random_str(6)}.png"
         image.save(image_path) #TODO: using a context manager to delete tmp file
         await matcher.send(MessageSegment.image("file://" + image_path))

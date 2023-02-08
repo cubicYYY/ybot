@@ -8,6 +8,7 @@ from zju_fetcher.school_fetcher import Exam, Course
 import os
 import numpy as np
 from typing import Optional
+from datetime import datetime
 from dataclasses import dataclass, astuple
 # TODO: Night/Day mode switch (time-wise)
 FONTS_PATH = "./assets/fonts"
@@ -233,11 +234,11 @@ def image_fit(image: Image.Image, size: tuple[int, int], mode="cover", filling=T
 
 
 @registered_as("exam")
-def _get_exam_image(arg_dicts: list[dict]):
+def _get_exam_image(exams: list[dict], last_update: Optional[float] = None):
     CARD_HEIGHT = 400
     CARD_WIDTH = 1600
     CARD_GAP = 30
-    height = (CARD_HEIGHT + CARD_GAP) * len(arg_dicts) + 130
+    height = (CARD_HEIGHT + CARD_GAP) * len(exams) + 130
     width = CARD_WIDTH + 100
     background = Image.new('RGBA', (width, height), BLACK)
     draw = ImageDraw.Draw(background)
@@ -245,13 +246,14 @@ def _get_exam_image(arg_dicts: list[dict]):
     text_with_pos_updated(draw, pos, "試験、襲来", MATISSE_EB,
                           126, color=WHITE, language="ja")
     pos_tmp = copy(pos)
-    text_with_pos_updated(draw, pos, "仅供参考：请以教务网为准！",
+    text_with_pos_updated(draw, pos, "仅供参考：请以教务网为准！" + "/" * 20,
                           SERIF_HEAVY, 56, color=ZJU_RED)
     pos = pos_tmp
-    pos.y += 56
-    text_with_pos_updated(draw, pos, "/" * 70, SERIF_HEAVY, 48, color=ZJU_RED)
+    pos.y += 60
+    if last_update:
+        text_with_pos_updated(draw, pos, f"数据更新于:{datetime.fromtimestamp(last_update)}", SERIF_HEAVY, 40, color=ZJU_RED)
     pos = Pos(50, 126)
-    for id, exam in enumerate(arg_dicts):
+    for id, exam in enumerate(exams):
         card = get_exam_card(**exam, bg_color=SHALLOW_PURPLE if id &
                              1 else RICE_WHITE, width=CARD_WIDTH, height=CARD_HEIGHT)
         background.paste(card, astuple(pos), card)  # with transparency
