@@ -5,7 +5,7 @@
 # TODO: school activities announcement/subscription
 # Non-firstplace requirements
 # TODO: McDonald tracking
-# TODO: use copyreg instead of native pickle
+#! TODO: use copyreg instead of native pickle
 import asyncio
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -176,9 +176,9 @@ class Fetcher(object):
         self.logged = False
         self.username = username
         self.password = password
-        self.ttl = 5 * 60  # seconds
+        self.ttl = 10 * 60  # seconds
         self.IS_SIMULATED_LOGIN = simulated
-        self.__version = "1.0.0"
+        self._version = "1.0.0"
 
     @staticmethod
     def is_float(*args) -> bool:
@@ -202,7 +202,7 @@ class Fetcher(object):
         with open(file, 'rb') as f:
             try:
                 saved = pickle.load(file=f)
-                if saved["__version"] != self.__version:
+                if saved["_version"] != self._version:
                     print("WARN: older version cache file")
                     return
             except:
@@ -210,7 +210,7 @@ class Fetcher(object):
                 return
             if not isinstance(saved, dict):
                 raise ValueError("Not a valid fetcher store file")
-            self.__dict__ = saved
+            self.__dict__ |= saved
 
     async def simulated_login(self, username: str, password: str) -> Packed:
         # Not work behind a proxy.

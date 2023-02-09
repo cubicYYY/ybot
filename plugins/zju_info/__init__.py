@@ -1,3 +1,5 @@
+###
+from functools import lru_cache
 from nonebot.rule import to_me
 from nonebot.adapters.onebot.v11 import Event, Message, PrivateMessageEvent, MessageSegment
 from nonebot.matcher import Matcher
@@ -44,6 +46,9 @@ except:
     print("WARNING: Could not recover account JSON file.")
     pass
 
+@lru_cache(maxsize=100)
+def get_fetcher(username, password):
+    return fetchers.zju.Fetcher(username, password)
 
 def is_private_msg(event: Event):
     # message.private
@@ -61,7 +66,7 @@ async def handle_gpa(matcher: Matcher, event: Event):
         await matcher.finish("未绑定qq,请先*私聊*进行绑定！")
     username = qq_to_account[qq]['username']
     password = qq_to_account[qq]['password']
-    student = fetchers.zju.Fetcher(username, password)
+    student = get_fetcher(username, password)
     message = f"{username}的GPA是:{await student.get_GPA():0>.3f}/5.00"
     await matcher.send(message)
 
@@ -202,7 +207,7 @@ async def handle_exam(matcher: Matcher, event: Event, arg: Message = CommandArg(
         await matcher.finish("未绑定qq,请先*私聊*进行绑定！")
     username = qq_to_account[qq]['username']
     password = qq_to_account[qq]['password']
-    student = fetchers.zju.Fetcher(username, password)
+    student = get_fetcher(username, password)
 
     def show_if_exist(obj, template: str = "{}") -> str:
         return template.format(obj) if obj else ""
@@ -260,7 +265,8 @@ async def handle_exam(matcher: Matcher, event: Event, arg: Message = CommandArg(
         return
         
     msg = "考试列表："
-    for id, exam in enumerate(await student.get_all_exams()):
+    _, exam_iter = await student.get_all_exams()
+    for id, exam in enumerate(exam_iter):
         if exam.time_final is not None or exam.time_mid is not None:
             if is_only_incoming and not is_incoming(exam):
                 continue
