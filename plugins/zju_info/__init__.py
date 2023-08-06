@@ -67,7 +67,12 @@ async def handle_gpa(matcher: Matcher, event: Event):
     username = qq_to_account[qq]['username']
     password = qq_to_account[qq]['password']
     student = get_fetcher(username, password)
-    message = f"{username}的GPA是:{await student.get_GPA():0>.3f}/5.00"
+    message = f"你的GPA是:{await student.get_GPA():0>.3f}/5.00"
+    message += f"\n百分制加权均分: {await student.get_avg_score():0>.3f}/100" 
+    message += f"""
+出国GPA折算:
+    浙大旧4分制: {await student.get_abroad_GPA_old():0>.3f}/4.00
+    浙大新4.3分制（2022级开始）: {await student.get_abroad_GPA_new():0>.3f}/4.30"""
     await matcher.send(message)
 
 
@@ -80,8 +85,8 @@ async def handle_chalaoshi_first(state: T_State, matcher: Matcher, arg: Message 
 
 @chalaoshi.got("id", prompt="你想要查询哪位老师呢？")
 async def handle_chalaoshi(state: T_State, matcher: Matcher, teacher: str = ArgPlainText("id")):
-    state.setdefault("id", teacher)
-    # print("now:",teacher)
+    state.setdefault("id", teacher) 
+    # state value can also be used to distinguish whether is now querying or selecting
     try:
         if teacher and teacher.isdigit():
             tmp_id = int(teacher)
@@ -117,13 +122,13 @@ async def handle_chalaoshi(state: T_State, matcher: Matcher, teacher: str = ArgP
     assert teacher_id is not None
     the_teacher = await fetchers.chalaoshi.get_teacher_info(int(teacher_id))
     message = f"""{the_teacher.name}老师 @{the_teacher.college}
-学生评价：{the_teacher.rating} ({the_teacher.rating_count:.0f}人评价)
+学生评价：{the_teacher.rating} ({the_teacher.rating_count}人评价)
 点名可能性：{the_teacher.taking_rolls_likelihood}%
 """
     if the_teacher.grades_per_course:
         message += "\n✳课程给分情况："
     for course, stats in the_teacher.grades_per_course.items():
-        message += f"""\n{course:<6}: 均绩{stats.avg_grade_points:>.02f}/5.00"""
+        message += f"""\n{course:<6}: 均绩{stats.avg_grade_points}/5.00"""
     await matcher.finish(message)
 
 

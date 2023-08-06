@@ -91,7 +91,7 @@ class TimedDataDescriptor(object):
         else:
             self.initial_data = None
 
-    def __get__(self, obj, objtype): # can this be simplified? feels trivial when using it
+    def __get__(self, obj, objtype):  # can this be simplified? feels trivial when using it
         if obj is None:
             return self
         return (obj.__dict__.setdefault(self.last_update_name, None), obj.__dict__.setdefault(self.name, self.initial_data))
@@ -143,12 +143,12 @@ class Exam:
         t = re.match(time_fmt, time_str)
         if t is None:
             return False
-        t = t.groupdict()
-        for k, v in t.items():
-            t[k] = int(v)
-        assert isinstance(t, dict)
-        return datetime(year=t["year"], month=t["month"], day=t["day"],
-                        hour=t["start_h"], minute=t["start_m"], second=0, tzinfo=pytz.timezone('Asia/Shanghai'))
+        t_dict = t.groupdict()
+        for k, v in t_dict.items():
+            t_dict[k] = int(v)
+        assert isinstance(t_dict, dict)
+        return datetime(year=t_dict["year"], month=t_dict["month"], day=t_dict["day"],
+                        hour=t_dict["start_h"], minute=t_dict["start_m"], second=0, tzinfo=pytz.timezone('Asia/Shanghai'))
 
 
 @dataclass
@@ -170,7 +170,7 @@ class Course:
 class Fetcher(object):
     exams = TimedDataDescriptor(data_factory=lambda: [])
     courses = TimedDataDescriptor(data_factory=lambda: [])
-    
+
     def __init__(self, username=None, password=None, *, simulated=False):
         self.cookies = {}
         self.logged = False
@@ -457,7 +457,7 @@ class Fetcher(object):
         res = list(await self.get_exams(None, None))
         self.exams = res
         return self.exams
-            
+
     ###
 
     @cache_after_exec
@@ -506,7 +506,7 @@ class Fetcher(object):
                 text = await r.text()
                 pattern = r"<td>(?P<code>.*?)</td><td>(?P<name>.*?)</td><td>(?P<score>.*?)</td><td>(?P<credit>.*?)</td><td>(?P<grade_point>.*?)</td><td>(?P<re_exam_score>.*?)</td>"
             res = [Course(**course.groupdict())
-                            for course in re.finditer(pattern, text)]
+                   for course in re.finditer(pattern, text)]
             self.courses = res
             return iter(res)
 
