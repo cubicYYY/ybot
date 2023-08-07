@@ -1,6 +1,8 @@
 from copy import copy
 from functools import lru_cache
 from io import BytesIO
+import random
+import string
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import os
 import numpy as np
@@ -220,3 +222,8 @@ def get_circle_mask(size: tuple[int, int], blur_radius: int = 0) -> Image.Image:
     ImageDraw.Draw(mask).ellipse((0, 0) + bigsize, fill=255)
     mask = mask.resize(size, Image.LANCZOS)  # High quality
     return mask if not blur_radius else mask.filter(ImageFilter.GaussianBlur(blur_radius))
+
+def random_str(length):
+    """Generate random a string consists with a-zA-z0-9 with a given length"""
+    letters = string.ascii_lowercase + string.ascii_uppercase + string.digits
+    return ''.join(random.choice(letters) for _ in range(length))

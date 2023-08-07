@@ -10,8 +10,10 @@ chromedriver
 .env*
 *.cache.json
 accounts.json
+users.json
 push.bat
 pull.bat
 *.tmp
 tmp*
+*.sqlite
 !.env

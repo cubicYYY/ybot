@@ -18,6 +18,7 @@ import zju_fetcher as fetchers
 from math import ceil
 from zju_fetcher.school_fetcher import Exam
 from utils import qq_image
+from utils.image_utils import random_str
 
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -54,10 +55,7 @@ def is_private_msg(event: Event):
     # message.private
     return isinstance(event, PrivateMessageEvent)
 
-def random_str(length):
-    """Generate random a string consists with a-zA-z0-9 with a given length"""
-    letters = string.ascii_lowercase + string.ascii_uppercase + string.digits
-    return ''.join(random.choice(letters) for _ in range(length))
+
 
 @gpa.handle()
 async def handle_gpa(matcher: Matcher, event: Event):
@@ -80,7 +78,7 @@ async def handle_gpa(matcher: Matcher, event: Event):
 async def handle_chalaoshi_first(state: T_State, matcher: Matcher, arg: Message = CommandArg()):
     teacher = arg.extract_plain_text()
     if teacher:
-        matcher.set_arg("id", arg)
+        matcher.set_arg("id", Message(arg))
 
 
 @chalaoshi.got("id", prompt="你想要查询哪位老师呢？")
@@ -136,7 +134,7 @@ async def handle_chalaoshi(state: T_State, matcher: Matcher, teacher: str = ArgP
 async def handle_course_first(state: T_State, matcher: Matcher, arg: Message = CommandArg()):
     teacher = arg.extract_plain_text()
     if teacher:
-        matcher.set_arg("query", arg)
+        matcher.set_arg("query", Message(arg))
 
 
 @course.got("query", prompt="你想要查询哪门课程呢？")
@@ -264,9 +262,11 @@ async def handle_exam(matcher: Matcher, event: Event, arg: Message = CommandArg(
         
         image = qq_image.handlers['exam'](sorted(arg_dicts, key=lambda x: comp_key(x['exam']), reverse=False), last_update = up_time)
         image_path = f"{IMAGE_TMP_PATH}/tmp_{random_str(6)}.png"
-        image.save(image_path) #TODO: using a context manager to delete tmp file
-        await matcher.send(MessageSegment.image("file://" + image_path))
-        os.remove(image_path)
+        try:
+            image.save(image_path) #TODO: using a context manager to delete tmp file
+            await matcher.send(MessageSegment.image("file://" + image_path))
+        finally:
+            os.remove(image_path)
         return
         
     msg = "考试列表："

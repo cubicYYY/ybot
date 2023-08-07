@@ -105,7 +105,7 @@ machine = Markov()
 markov = on_command("歪诗", permission=Permission(
     tracked_group_checker) | Permission(private_checker), priority=1)
 group_message = on_message(permission=Permission(
-    tracked_group_checker) | Permission(private_checker), priority=2)
+    tracked_group_checker) | Permission(private_checker), priority=2, block=False)
 
 
 @markov.handle()
