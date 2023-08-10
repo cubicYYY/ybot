@@ -10,8 +10,12 @@ from nonebot.plugin import on_command
 from nonebot.typing import T_State
 from cachetools import TTLCache
 
-import base64
+import sys
 import os
+PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.abspath(os.path.join(PLUGIN_DIR,'..', '..'))) # FIXME: UGLY!
+
+import base64
 import re
 import json
 import pytz
@@ -29,19 +33,21 @@ from utils.image_utils import random_str
 
 global_config = get_driver().config
 
-PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
-BINDED_USER_FILE = os.path.join(PLUGIN_DIR, 'users.json')
+BINDED_USER_FILE = os.path.join(PLUGIN_DIR, 'binded.json')
 API_KEY = global_config.apex_key
 CUR_SEASON = global_config.season
 CUR_SPLIT = global_config.split
+PERIOD_KEY = f"s{CUR_SEASON}s{CUR_SPLIT}"
 IMAGE_TMP_PATH = "/tmp"
 
-qq2uid:dict[str, Any] = {
-    "initialized":[]
+apexbind_infos:dict[str, Any] = { # TODO: make it a class with (de)serialize methods
+    "users":{},
+    "initialized":{},
+    "tracked":[]
 }
 try:
     with open(BINDED_USER_FILE, "r") as f:
-        qq2uid = json.loads(f.read())
+        apexbind_infos = json.loads(f.read())
 except FileNotFoundError:
     pass
 except:
@@ -112,9 +118,12 @@ async def fetch_status(uid: int):
         async with session.get(url, params={"uid": uid,
                                             "platform": "PC"}) as r:
             return await r.json()
-        
-@lru_cache_with_expire(maxsize=128, expire_seconds=120)
-async def fetch_rank_scores(uid: int, season: int, split: int):
+
+async def fetch_current_rankscore(uid: int):
+    return (await fetch_status(uid))["global"]["rank"]["rankScore"]
+     
+@lru_cache_with_expire(maxsize=128, expire_seconds=3600)
+async def fetch_rank_scores_from_history(uid: int, season: int, split: int):
     async with aiohttp.ClientSession() as session:
         async with session.get(MATCH_HISTORY_URL, params={"split": f"s{season}_s{split}",
                                             "uid": uid}) as r:
@@ -125,7 +134,7 @@ async def fetch_rank_scores(uid: int, season: int, split: int):
             return scores
             
         
-@lru_cache_with_expire(maxsize=128, expire_seconds=300)
+@lru_cache_with_expire(maxsize=128, expire_seconds=600)
 async def fetch_legend_played(uid: int, season: int):
     async with aiohttp.ClientSession() as session:
         async with session.get(MOST_LEGENDS_URL, params={"period": f"season{season}",
@@ -151,22 +160,35 @@ apex_add = on_command("apex_add", rule=lambda: True,
 apex_bind = on_command("apex_bind", rule=lambda: True,
                        aliases={"apex绑定", "apex_bind"})
 
-def dump_qq2uid():
-    with open(BINDED_USER_FILE, "w") as f:
-        f.write(json.dumps(qq2uid))
+def dump_apexbind_infos():
+    with open(BINDED_USER_FILE, mode="w") as f:
+        f.write(json.dumps(apexbind_infos))
 
-async def init_trace(matcher, uid):
+async def init_track(uid, matcher: Matcher|None = None):
+    if uid not in apexbind_infos["tracked"]:
+        apexbind_infos["tracked"].append(uid) 
+    apexbind_infos["initialized"].setdefault(PERIOD_KEY, (lambda:[])())
+    
+    if uid in apexbind_infos["initialized"][PERIOD_KEY]:
+        if matcher:
+            await matcher.finish(f"啊哦，这赛季已经初始化过该账号了！")
+        dump_apexbind_infos()
+        return
+    else:
+        apexbind_infos["initialized"][PERIOD_KEY].append(uid)
+    
     async with aiohttp.ClientSession() as session:
-        await matcher.send(f"UID:{uid}\n请等待初始化……")
-        scores = await fetch_rank_scores(int(uid), int(CUR_SEASON), int(CUR_SPLIT))
+        if matcher:
+            await matcher.send(f"UID:{uid}\n请等待初始化……")
+        scores = await fetch_rank_scores_from_history(int(uid), int(CUR_SEASON), int(CUR_SPLIT))
         for score in scores:
             dbcursor.execute("INSERT INTO data (timestamp,score,uid,season,split) VALUES (?,?,?,?,?)", 
                              (0, score, int(uid), CUR_SEASON, CUR_SPLIT))
             # print((0, score, int(uid)))
         db.commit()
-        qq2uid["initialized"].append(uid) 
-        dump_qq2uid()
-        await matcher.finish(f"初始化完毕，导入了{len(scores)}条排位分数记录。")
+        dump_apexbind_infos()
+        if matcher:
+            await matcher.finish(f"初始化完毕，导入了{len(scores)}条排位分数记录。")
         
 @apex_bind.handle()
 async def handle_bind_first(matcher: Matcher, arg: Message = CommandArg()):
@@ -178,15 +200,17 @@ async def handle_bind_first(matcher: Matcher, arg: Message = CommandArg()):
 @apex_bind.got("uid", prompt="请提供你的uid")
 async def handle_bind(matcher: Matcher, event: Event, struid: str = ArgPlainText("uid")):
     uid = int(struid)
-    if uid in qq2uid.values():
+    if uid in apexbind_infos["qq2uid"].values():
         await matcher.finish(f"UID:{uid}已经被绑定。绑定者可以使用 apex解绑 命令解除绑定。")
         return
     
     qq = event.get_user_id()
-    if uid in qq2uid["initialized"]:
+    apexbind_infos["qq2uid"][str(qq)] = uid
+    
+    if uid in apexbind_infos["tracked"]: 
         await matcher.finish(f"绑定成功。")
-        
-    await init_trace(matcher, uid)
+    else: # Initialize when binding is complete
+        await init_track(uid, matcher)
         
         
 
@@ -199,10 +223,10 @@ async def handle_stat_first(matcher: Matcher, event: Event, arg: Message = Comma
         matcher.set_arg("uid", Message(str(uid)))
     except ValueError: # Default: self
         qq = event.get_user_id()
-        if qq not in qq2uid.keys():
+        if qq not in apexbind_infos["qq2uid"].keys():
             await matcher.finish(f"该QQ未绑定uid. 请使用 apex绑定 命令进行绑定。")
-        print(f"Corresponding uid:{qq2uid[qq]}")
-        matcher.set_arg("uid", Message(str(qq2uid[qq])))
+        print(f"Corresponding uid:{apexbind_infos['qq2uid'][qq]}")
+        matcher.set_arg("uid", Message(str(apexbind_infos['qq2uid'][qq])))
 
 
 @apex_stat.got("uid", prompt="我uid呢？")
@@ -232,10 +256,10 @@ async def handle_add_first(matcher: Matcher, arg: Message = CommandArg()):
 @apex_add.got("uid", prompt="请提供你的uid")
 async def handle_add(matcher: Matcher, event: Event, struid: str = ArgPlainText("uid")):
     uid = int(struid)
-    if uid in qq2uid["initialized"]:
+    if uid in apexbind_infos["tracked"]:
         await matcher.finish(f"已经在追踪列表中。")
         
-    await init_trace(matcher, uid)
+    await init_track(uid, matcher)
     
         
 if __name__ == "__main__":
